@@ -147,6 +147,7 @@ pub fn run() {
             commands::agents::install_agent,
             commands::agents::uninstall_agent,
             commands::agents::check_jre_installed,
+            commands::agents::reinstall_jre,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

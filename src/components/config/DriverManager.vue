@@ -16,6 +16,7 @@ interface AgentDriverInfo {
 const drivers = ref<AgentDriverInfo[]>([]);
 const jreInstalled = ref(false);
 const installing = ref<string | null>(null);
+const reinstallingJre = ref(false);
 
 onMounted(async () => {
   await refresh();
@@ -47,6 +48,18 @@ async function uninstallDriver(dbType: string) {
   }
 }
 
+async function reinstallJre() {
+  reinstallingJre.value = true;
+  try {
+    await invoke("reinstall_jre");
+    await refresh();
+  } catch (e: any) {
+    alert(e);
+  } finally {
+    reinstallingJre.value = false;
+  }
+}
+
 function formatSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
@@ -56,9 +69,18 @@ function formatSize(bytes: number): string {
   <div class="space-y-4 p-4">
     <h3 class="text-lg font-medium">驱动管理</h3>
 
-    <div class="text-sm text-muted-foreground">
-      JRE: {{ jreInstalled ? "✓ 已安装" : "未安装" }}
-      <span v-if="!jreInstalled" class="ml-2 text-xs">(首次安装驱动时自动下载)</span>
+    <div class="flex items-center gap-3 text-sm text-muted-foreground">
+      <span>JRE: {{ jreInstalled ? "✓ 已安装" : "未安装" }}</span>
+      <span v-if="!jreInstalled" class="text-xs">(首次安装驱动时自动下载)</span>
+      <Button
+        v-if="jreInstalled"
+        size="sm"
+        variant="ghost"
+        :disabled="reinstallingJre || installing !== null"
+        @click="reinstallJre"
+      >
+        {{ reinstallingJre ? "重装中..." : "重新安装 JRE" }}
+      </Button>
     </div>
 
     <div class="space-y-2">

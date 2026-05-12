@@ -93,6 +93,27 @@ pub async fn check_jre_installed(state: State<'_, Arc<AppState>>) -> Result<bool
     Ok(state.agent_manager.is_jre_installed())
 }
 
+#[tauri::command]
+pub async fn reinstall_jre(state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    let am = &state.agent_manager;
+    let jre_dir = am.base_dir().join("jre");
+    if jre_dir.exists() {
+        std::fs::remove_dir_all(&jre_dir).map_err(|e| format!("Failed to remove old JRE: {e}"))?;
+    }
+    let registry = fetch_registry().await?;
+    let platform = AgentManager::current_platform();
+    let jre_info =
+        registry.jre.platforms.get(platform).ok_or_else(|| format!("No JRE available for platform: {platform}"))?;
+    let jre_archive = am.base_dir().join("jre-download.tar.gz");
+    download_with_proxy(&jre_info.url, &jre_archive).await?;
+    extract_archive(&jre_archive, &jre_dir)?;
+    std::fs::remove_file(&jre_archive).ok();
+    let mut local_state = am.load_state();
+    local_state.jre_version = Some(registry.jre.version.clone());
+    am.save_state(&local_state)?;
+    Ok(())
+}
+
 async fn fetch_registry() -> Result<AgentRegistry, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
