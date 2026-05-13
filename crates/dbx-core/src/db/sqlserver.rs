@@ -1,6 +1,6 @@
 use rust_decimal::Decimal;
 use std::time::Instant;
-use tiberius::{AuthMethod, Client, Config};
+use tiberius::{AuthMethod, Client, ColumnData, Config, FromSql};
 use tokio::net::TcpStream;
 use tokio_util::compat::{Compat, TokioAsyncWriteCompatExt};
 
@@ -56,25 +56,68 @@ async fn try_connect(
 }
 
 fn row_to_json(row: &tiberius::Row) -> Vec<serde_json::Value> {
-    (0..row.len())
-        .map(|i| {
-            if let Some(v) = row.try_get::<&str, _>(i).ok().flatten() {
-                serde_json::Value::String(v.to_string())
-            } else if let Some(v) = row.try_get::<Decimal, _>(i).ok().flatten() {
-                serde_json::Value::String(v.to_string())
-            } else if let Some(v) = row.try_get::<i32, _>(i).ok().flatten() {
-                serde_json::Value::Number(v.into())
-            } else if let Some(v) = row.try_get::<i64, _>(i).ok().flatten() {
-                super::safe_i64_to_json(v)
-            } else if let Some(v) = row.try_get::<f64, _>(i).ok().flatten() {
-                serde_json::Number::from_f64(v).map(serde_json::Value::Number).unwrap_or(serde_json::Value::Null)
-            } else if let Some(v) = row.try_get::<bool, _>(i).ok().flatten() {
-                serde_json::Value::Bool(v)
-            } else {
-                serde_json::Value::Null
-            }
-        })
-        .collect()
+    row.cells().map(|(_, cell)| sqlserver_cell_to_json(cell)).collect()
+}
+
+fn sqlserver_cell_to_json(cell: &ColumnData<'static>) -> serde_json::Value {
+    if let Ok(Some(v)) = <&str as FromSql>::from_sql(cell) {
+        return serde_json::Value::String(v.to_string());
+    }
+    if let Ok(Some(v)) = <chrono::NaiveDateTime as FromSql>::from_sql(cell) {
+        return serde_json::Value::String(v.to_string());
+    }
+    if let Ok(Some(v)) = <chrono::NaiveDate as FromSql>::from_sql(cell) {
+        return serde_json::Value::String(v.to_string());
+    }
+    if let Ok(Some(v)) = <chrono::NaiveTime as FromSql>::from_sql(cell) {
+        return serde_json::Value::String(v.to_string());
+    }
+    if let Ok(Some(v)) = <chrono::DateTime<chrono::FixedOffset> as FromSql>::from_sql(cell) {
+        return serde_json::Value::String(v.to_rfc3339());
+    }
+    if let Ok(Some(v)) = <Decimal as FromSql>::from_sql(cell) {
+        return serde_json::Value::String(v.to_string());
+    }
+    if let Ok(Some(v)) = <u8 as FromSql>::from_sql(cell) {
+        return serde_json::Value::Number(v.into());
+    }
+    if let Ok(Some(v)) = <i16 as FromSql>::from_sql(cell) {
+        return serde_json::Value::Number(v.into());
+    }
+    if let Ok(Some(v)) = <i32 as FromSql>::from_sql(cell) {
+        return serde_json::Value::Number(v.into());
+    }
+    if let Ok(Some(v)) = <i64 as FromSql>::from_sql(cell) {
+        return super::safe_i64_to_json(v);
+    }
+    if let Ok(Some(v)) = <f32 as FromSql>::from_sql(cell) {
+        return serde_json::Number::from_f64(v as f64)
+            .map(serde_json::Value::Number)
+            .unwrap_or(serde_json::Value::Null);
+    }
+    if let Ok(Some(v)) = <f64 as FromSql>::from_sql(cell) {
+        return serde_json::Number::from_f64(v).map(serde_json::Value::Number).unwrap_or(serde_json::Value::Null);
+    }
+    if let Ok(Some(v)) = <bool as FromSql>::from_sql(cell) {
+        return serde_json::Value::Bool(v);
+    }
+    if let Ok(Some(v)) = <uuid::Uuid as FromSql>::from_sql(cell) {
+        return serde_json::Value::String(v.to_string());
+    }
+    if let Ok(Some(v)) = <Vec<u8> as tiberius::FromSqlOwned>::from_sql_owned(cell.clone()) {
+        return serde_json::Value::String(format!("0x{}", hex_encode(&v)));
+    }
+    serde_json::Value::Null
+}
+
+fn hex_encode(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        out.push(HEX[(byte >> 4) as usize] as char);
+        out.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    out
 }
 
 pub async fn list_databases(client: &mut SqlServerClient) -> Result<Vec<DatabaseInfo>, String> {
@@ -512,7 +555,9 @@ fn first_sql_tokens(sql: &str, limit: usize) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::requires_simple_query_batch;
+    use super::{requires_simple_query_batch, sqlserver_cell_to_json};
+    use chrono::NaiveDate;
+    use tiberius::{ColumnData, IntoSql};
 
     #[test]
     fn sqlserver_module_definitions_require_simple_query_batch() {
@@ -529,5 +574,18 @@ mod tests {
         assert!(!requires_simple_query_batch("ALTER TABLE dbo.t ADD name NVARCHAR(20);"));
         assert!(!requires_simple_query_batch("CREATE TABLE dbo.t(id INT);"));
         assert!(!requires_simple_query_batch("UPDATE dbo.t SET id = 1;"));
+    }
+
+    #[test]
+    fn sqlserver_tinyint_cells_are_json_numbers() {
+        assert_eq!(sqlserver_cell_to_json(&ColumnData::U8(Some(7))), serde_json::json!(7));
+    }
+
+    #[test]
+    fn sqlserver_datetime2_cells_are_json_strings() {
+        let datetime = NaiveDate::from_ymd_opt(2026, 5, 13).unwrap().and_hms_milli_opt(9, 8, 7, 123).unwrap();
+        let cell: ColumnData<'static> = datetime.into_sql();
+
+        assert_eq!(sqlserver_cell_to_json(&cell), serde_json::json!("2026-05-13 09:08:07.123"));
     }
 }
