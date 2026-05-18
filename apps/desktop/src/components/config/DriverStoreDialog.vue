@@ -4,18 +4,27 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { useI18n } from "vue-i18n";
-import { FolderOpen, Trash2, Download, RotateCcw, Loader2, RefreshCw, Check } from "lucide-vue-next";
+import { FolderOpen, Trash2, Download, RotateCcw, Loader2, RefreshCw, Check, Clock3 } from "lucide-vue-next";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import DriverInstallProgressCircle from "@/components/config/DriverInstallProgressCircle.vue";
 import DatabaseIcon from "@/components/icons/DatabaseIcon.vue";
 import { useToast } from "@/composables/useToast";
 import { isTauriRuntime } from "@/lib/tauriRuntime";
 import { countAvailableAgentDriverUpdates } from "@/lib/agentDriverUpdateBadge";
 import type { JdbcDriverInfo, JdbcPluginStatus } from "@/types/database";
 import * as api from "@/lib/api";
+import {
+  addDriverInstallQueue,
+  driverInstallProgressPercent,
+  isDriverInstallProgressTarget,
+  removeDriverInstallQueue,
+  takeNextDriverInstallQueue,
+  type DriverInstallProgress,
+} from "@/lib/driverInstallProgressUi";
 
 const { t } = useI18n();
 const { toast } = useToast();
@@ -39,12 +48,6 @@ interface AgentDriverInfo {
   jre_installed: boolean;
 }
 
-interface InstallProgress {
-  step: string;
-  downloaded?: number;
-  total?: number;
-}
-
 type JavaRuntimeMode = "managed" | "system" | "custom";
 
 interface JavaRuntimeConfig {
@@ -58,9 +61,10 @@ const upgradingAll = ref(false);
 const upgradingCurrent = ref("");
 const upgradingIndex = ref(0);
 const upgradingTotal = ref(0);
+const queuedDriverInstalls = ref<string[]>([]);
 const reinstallingJre = ref<string | null>(null);
 const refreshing = ref(false);
-const progress = ref<InstallProgress | null>(null);
+const progress = ref<DriverInstallProgress | null>(null);
 const javaRuntimeConfig = ref<JavaRuntimeConfig>({ mode: "managed", custom_java_path: null });
 const customJavaPath = ref("");
 const savingJavaRuntime = ref(false);
@@ -95,17 +99,42 @@ const progressText = computed(() => {
   return `${prefix}${label}  ${dl} / ${total}  (${pct}%)`;
 });
 
-const progressPercent = computed(() => {
-  const p = progress.value;
-  if (!p || !p.total) return 0;
-  return Math.round(((p.downloaded ?? 0) / p.total) * 100);
-});
+const progressNumber = computed(() => driverInstallProgressPercent(progress.value));
 
 const updatableCount = computed(() => drivers.value.filter((d) => d.update_available).length);
 
 function updateAgentDrivers(nextDrivers: AgentDriverInfo[]) {
   drivers.value = nextDrivers;
   emit("update-count-change", countAvailableAgentDriverUpdates(nextDrivers));
+}
+
+function isDriverProgressActive(dbType: string): boolean {
+  return isDriverInstallProgressTarget(dbType, {
+    installing: installing.value,
+    upgradingAll: upgradingAll.value,
+    progress: progress.value,
+  });
+}
+
+function progressTitle(fallback: string): string {
+  return progressText.value || fallback;
+}
+
+function isDriverQueued(dbType: string): boolean {
+  return queuedDriverInstalls.value.includes(dbType);
+}
+
+function canInstallOrUpdateDriver(dbType: string): boolean {
+  const driver = drivers.value.find((d) => d.db_type === dbType);
+  return Boolean(driver && (!driver.installed || driver.update_available));
+}
+
+function queueDriverInstall(dbType: string) {
+  queuedDriverInstalls.value = addDriverInstallQueue(queuedDriverInstalls.value, dbType, installing.value);
+}
+
+function removeQueuedDriverInstall(dbType: string) {
+  queuedDriverInstalls.value = removeDriverInstallQueue(queuedDriverInstalls.value, dbType);
 }
 
 async function refreshAgents() {
@@ -166,6 +195,15 @@ async function chooseCustomJavaPath() {
 }
 
 async function installDriver(dbType: string) {
+  if (installing.value !== null || upgradingAll.value) {
+    queueDriverInstall(dbType);
+    return;
+  }
+  await runDriverInstall(dbType);
+  await runQueuedDriverInstalls();
+}
+
+async function runDriverInstall(dbType: string) {
   const label = drivers.value.find((d) => d.db_type === dbType)?.label ?? dbType;
   installing.value = dbType;
   progress.value = null;
@@ -181,8 +219,20 @@ async function installDriver(dbType: string) {
   }
 }
 
+async function runQueuedDriverInstalls() {
+  if (installing.value !== null || upgradingAll.value) return;
+
+  const result = takeNextDriverInstallQueue(queuedDriverInstalls.value, canInstallOrUpdateDriver);
+  queuedDriverInstalls.value = result.queue;
+  if (!result.next) return;
+
+  await runDriverInstall(result.next);
+  await runQueuedDriverInstalls();
+}
+
 async function upgradeAll() {
   upgradingAll.value = true;
+  queuedDriverInstalls.value = [];
   progress.value = null;
   try {
     const count = await invoke<number>("upgrade_all_agents");
@@ -380,7 +430,7 @@ onMounted(async () => {
     updateAgentDrivers(result);
   });
 
-  unlisten = await listen<InstallProgress>("agent-install-progress", (event) => {
+  unlisten = await listen<DriverInstallProgress>("agent-install-progress", (event) => {
     const payload = event.payload as any;
     if (payload.step === "done" || payload.step === "all-done") {
       progress.value = null;
@@ -476,27 +526,34 @@ onUnmounted(() => {
                 <div class="flex shrink-0 items-center gap-3">
                   <Check v-if="jre.installed" class="h-4 w-4 text-green-600" />
                   <span v-else class="text-xs text-muted-foreground">未安装</span>
+                  <DriverInstallProgressCircle
+                    v-if="reinstallingJre === jre.key"
+                    :percent="progressNumber"
+                    :title="progressTitle(jre.installed ? '重装中' : '安装中')"
+                  />
                   <Button
-                    v-if="!jre.installed"
+                    v-else-if="!jre.installed"
                     type="button"
                     variant="default"
                     size="sm"
+                    class="h-8 text-xs"
                     :disabled="reinstallingJre !== null || installing !== null"
                     @click="reinstallJre(jre.key)"
                   >
                     <Download class="h-3.5 w-3.5 mr-1" />
-                    {{ reinstallingJre === jre.key ? "安装中..." : "安装" }}
+                    安装
                   </Button>
                   <Button
-                    v-if="jre.installed"
+                    v-else-if="jre.installed"
                     type="button"
                     variant="outline"
                     size="sm"
+                    class="h-8 text-xs"
                     :disabled="reinstallingJre !== null || installing !== null"
                     @click="reinstallJre(jre.key)"
                   >
                     <RotateCcw class="h-3.5 w-3.5 mr-1" />
-                    {{ reinstallingJre === jre.key ? "重装中..." : "重新安装" }}
+                    重新安装
                   </Button>
                   <Button
                     v-if="jre.installed"
@@ -515,17 +572,6 @@ onUnmounted(() => {
             <div v-else class="rounded-xl border bg-muted/20 p-4">
               <div class="text-sm font-medium">JRE 运行时</div>
               <p class="text-xs text-muted-foreground mt-0.5">首次安装驱动时自动下载</p>
-            </div>
-
-            <!-- Progress bar -->
-            <div v-if="progress" class="space-y-1.5 px-1">
-              <div class="text-xs text-muted-foreground">{{ progressText }}</div>
-              <div class="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                <div
-                  class="h-full rounded-full bg-primary transition-all duration-200"
-                  :style="{ width: `${progressPercent}%` }"
-                />
-              </div>
             </div>
 
             <!-- Driver List -->
@@ -587,33 +633,64 @@ onUnmounted(() => {
                 </div>
                 <div class="flex shrink-0 items-center gap-2">
                   <Button
-                    v-if="!driver.installed"
+                    v-if="!driver.installed && isDriverQueued(driver.db_type)"
+                    size="sm"
+                    variant="outline"
+                    class="h-7 border-green-500/30 bg-green-500/10 text-xs text-green-700 hover:bg-green-500/15"
+                    :disabled="upgradingAll"
+                    @click="removeQueuedDriverInstall(driver.db_type)"
+                  >
+                    <Clock3 class="h-3 w-3 mr-1" />
+                    排队中
+                  </Button>
+                  <DriverInstallProgressCircle
+                    v-else-if="!driver.installed && isDriverProgressActive(driver.db_type)"
+                    :percent="progressNumber"
+                    :title="progressTitle('安装中')"
+                  />
+                  <Button
+                    v-else-if="!driver.installed"
                     size="sm"
                     class="h-7 text-xs"
-                    :disabled="installing !== null || upgradingAll"
+                    :disabled="upgradingAll"
                     @click="installDriver(driver.db_type)"
                   >
-                    <Loader2 v-if="installing === driver.db_type" class="h-3 w-3 animate-spin mr-1" />
-                    <Download v-else class="h-3 w-3 mr-1" />
-                    {{ installing === driver.db_type ? "安装中..." : "安装" }}
+                    <Download class="h-3 w-3 mr-1" />
+                    安装
                   </Button>
                   <template v-else>
                     <Check class="h-4 w-4 text-green-600" />
                     <Button
-                      v-if="driver.update_available"
+                      v-if="driver.update_available && isDriverQueued(driver.db_type)"
+                      size="sm"
+                      variant="outline"
+                      class="h-7 border-green-500/30 bg-green-500/10 text-xs text-green-700 hover:bg-green-500/15"
+                      :disabled="upgradingAll"
+                      @click="removeQueuedDriverInstall(driver.db_type)"
+                    >
+                      <Clock3 class="h-3 w-3 mr-1" />
+                      排队中
+                    </Button>
+                    <DriverInstallProgressCircle
+                      v-else-if="driver.update_available && isDriverProgressActive(driver.db_type)"
+                      :percent="progressNumber"
+                      :title="progressTitle('更新中')"
+                    />
+                    <Button
+                      v-else-if="driver.update_available"
                       size="sm"
                       variant="outline"
                       class="h-7 text-xs"
-                      :disabled="installing !== null || upgradingAll"
+                      :disabled="upgradingAll"
                       @click="installDriver(driver.db_type)"
                     >
-                      {{ installing === driver.db_type ? "更新中..." : "更新" }}
+                      更新
                     </Button>
                     <Button
                       variant="ghost"
                       size="sm"
                       class="h-7 text-xs text-muted-foreground hover:text-destructive"
-                      :disabled="upgradingAll"
+                      :disabled="installing !== null || upgradingAll || isDriverQueued(driver.db_type)"
                       @click="uninstallDriver(driver.db_type)"
                     >
                       卸载
