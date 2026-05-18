@@ -206,7 +206,7 @@ public final class DbxJdbcPlugin {
         applyExecutionContext(connection, conn, database, schema);
         try (Statement statement = conn.createStatement()) {
             statement.setMaxRows(MAX_ROWS + 1);
-            boolean hasResultSet = statement.execute(sql);
+            boolean hasResultSet = statement.execute(trimStatementSql(sql));
             ObjectNode result = MAPPER.createObjectNode();
             ArrayNode columns = MAPPER.createArrayNode();
             ArrayNode rows = MAPPER.createArrayNode();
@@ -241,6 +241,10 @@ public final class DbxJdbcPlugin {
             result.put("truncated", truncated);
             return result;
         }
+    }
+
+    private static String trimStatementSql(String sql) {
+        return sql == null ? "" : sql.trim().replaceFirst(";\\s*$", "");
     }
 
     private static void applyExecutionContext(JsonNode connection, Connection conn, String database, String schema) throws SQLException {

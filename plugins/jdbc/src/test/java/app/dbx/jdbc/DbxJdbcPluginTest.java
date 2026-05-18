@@ -48,6 +48,19 @@ final class DbxJdbcPluginTest {
     }
 
     @Test
+    void executeQueryTrimsSingleTrailingSemicolon() throws Exception {
+        JsonNode response = request("executeQuery", """
+            {
+              "connection": %s,
+              "sql": "SELECT 1 AS n;"
+            }
+            """.formatted(CONNECTION));
+
+        assertFalse(response.has("error"), response.toString());
+        assertEquals(1, response.path("result").path("rows").path(0).path(0).asInt());
+    }
+
+    @Test
     void driverQuirksDetectYashanJdbcUrl() throws Exception {
         JsonNode yashan = MAPPER.readTree("""
             {

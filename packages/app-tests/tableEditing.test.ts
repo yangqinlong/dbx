@@ -58,6 +58,7 @@ test("allows Hive table data editing even without declared primary keys", () => 
 test("does not use transactional grid saves for Hive", () => {
   assert.equal(supportsDataGridTransaction("hive"), false);
   assert.equal(supportsDataGridTransaction("trino"), false);
+  assert.equal(supportsDataGridTransaction("jdbc"), false);
   assert.equal(supportsDataGridTransaction("postgres"), true);
 });
 
