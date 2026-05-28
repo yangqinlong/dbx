@@ -87,9 +87,19 @@ pub struct RedisNodeEndpoint {
     pub port: u16,
 }
 
-pub async fn connect(url: &str) -> Result<redis::aio::MultiplexedConnection, String> {
+pub async fn connect(url: &str, timeout: std::time::Duration) -> Result<redis::aio::MultiplexedConnection, String> {
     let client = redis::Client::open(url).map_err(|e| format!("Redis connection failed: {e}"))?;
-    connect_client(client).await
+    let mut con = tokio::time::timeout(timeout, client.get_multiplexed_async_connection())
+        .await
+        .map_err(|_| format!("Redis connection timed out ({}s)", timeout.as_secs()))?
+        .map_err(|e| format!("Redis connection failed: {e}"))?;
+
+    tokio::time::timeout(timeout, redis::cmd("PING").query_async::<String>(&mut con))
+        .await
+        .map_err(|_| format!("Redis ping timed out ({}s)", timeout.as_secs()))?
+        .map_err(|e| format!("Redis authentication failed or command rejected: {e}"))?;
+
+    Ok(con)
 }
 
 pub async fn connect_sentinel(config: &ConnectionConfig) -> Result<redis::aio::MultiplexedConnection, String> {

@@ -214,6 +214,7 @@ export default {
     sshKeyPathBrowse: "浏览",
     sshExposeLan: "允许局域网访问隧道",
     sshConnectTimeout: "SSH 超时时间（秒）",
+    connectTimeout: "连接超时（秒）",
     proxy: "代理",
     proxyEnable: "通过代理连接数据库",
     proxyType: "代理类型",

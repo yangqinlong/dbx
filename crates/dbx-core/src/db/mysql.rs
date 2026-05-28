@@ -258,12 +258,12 @@ fn mysql_value_to_json(row: &mysql_async::Row, idx: usize) -> serde_json::Value 
         .unwrap_or(serde_json::Value::Null)
 }
 
-pub async fn connect(url: &str) -> Result<MySqlPool, String> {
-    connect_with_ca_cert(url, None).await
+pub async fn connect(url: &str, fallback_timeout: Duration) -> Result<MySqlPool, String> {
+    connect_with_ca_cert(url, None, fallback_timeout).await
 }
 
-pub async fn connect_with_ca_cert(url: &str, ca_cert_path: Option<&str>) -> Result<MySqlPool, String> {
-    let timeout = super::parse_connect_timeout(url);
+pub async fn connect_with_ca_cert(url: &str, ca_cert_path: Option<&str>, fallback_timeout: Duration) -> Result<MySqlPool, String> {
+    let timeout = super::parse_connect_timeout_with_fallback(url, fallback_timeout);
     let pool = create_pool(url, ca_cert_path)?;
     let result = verify_pool_connection(&pool, timeout).await;
 
@@ -606,8 +606,8 @@ fn mysql_async_url(url: &str) -> Cow<'_, str> {
     }
 }
 
-pub async fn connect_bare(url: &str) -> Result<MySqlPool, String> {
-    let timeout = super::parse_connect_timeout(url);
+pub async fn connect_bare(url: &str, fallback_timeout: Duration) -> Result<MySqlPool, String> {
+    let timeout = super::parse_connect_timeout_with_fallback(url, fallback_timeout);
     let pool = create_pool(url, None)?;
     verify_pool_connection(&pool, timeout).await.map(|_| pool)
 }

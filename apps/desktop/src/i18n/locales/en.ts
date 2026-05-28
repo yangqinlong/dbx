@@ -218,6 +218,7 @@ export default {
     sshKeyPathBrowse: "Browse",
     sshExposeLan: "Expose tunnel to LAN",
     sshConnectTimeout: "SSH Timeout (seconds)",
+    connectTimeout: "Connection Timeout (seconds)",
     proxy: "Proxy",
     proxyEnable: "Connect database through proxy",
     proxyType: "Proxy Type",

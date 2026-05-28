@@ -210,6 +210,7 @@ export default {
     sshKeyPathBrowse: "Examinar",
     sshExposeLan: "Exponer túnel a la red local",
     sshConnectTimeout: "Tiempo de espera SSH (segundos)",
+    connectTimeout: "Tiempo de espera de conexión (segundos)",
     proxy: "Proxy",
     proxyEnable: "Conectar la base de datos mediante proxy",
     proxyType: "Tipo de proxy",

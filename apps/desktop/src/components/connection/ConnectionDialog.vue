@@ -87,6 +87,7 @@ const defaultForm = (): Omit<ConnectionConfig, "id"> => ({
   ssh_key_passphrase: "",
   ssh_expose_lan: false,
   ssh_connect_timeout_secs: 5,
+  connect_timeout_secs: 5,
   proxy_enabled: false,
   proxy_type: "socks5",
   proxy_host: "",
@@ -345,6 +346,7 @@ watch(
         ssh_key_passphrase: config.ssh_key_passphrase || "",
         ssh_expose_lan: config.ssh_expose_lan || false,
         ssh_connect_timeout_secs: config.ssh_connect_timeout_secs || 5,
+        connect_timeout_secs: config.connect_timeout_secs || 5,
         proxy_enabled: config.proxy_enabled || false,
         proxy_type: config.proxy_type || "socks5",
         proxy_host: config.proxy_host || "",
@@ -737,6 +739,8 @@ function connectionConfigForSubmit(id: string): ConnectionConfig {
   }
   const sshTimeout = Number(config.ssh_connect_timeout_secs);
   config.ssh_connect_timeout_secs = Number.isFinite(sshTimeout) && sshTimeout > 0 ? sshTimeout : 5;
+  const connectTimeout = Number(config.connect_timeout_secs);
+  config.connect_timeout_secs = Number.isFinite(connectTimeout) && connectTimeout > 0 ? connectTimeout : 5;
   const proxyPort = Number(config.proxy_port);
   config.proxy_port = Number.isFinite(proxyPort) && proxyPort > 0 ? proxyPort : 1080;
   if (!config.one_time) config.one_time = undefined;
@@ -2312,6 +2316,17 @@ function openExternalUrl(url: string) {
                     step="1"
                     class="col-span-3"
                     :disabled="!form.ssh_enabled"
+                  />
+                </div>
+                <div class="grid grid-cols-4 items-center gap-4">
+                  <Label class="text-right text-xs">{{ t("connection.connectTimeout") }}</Label>
+                  <Input
+                    v-model.number="form.connect_timeout_secs"
+                    type="number"
+                    min="1"
+                    max="300"
+                    step="1"
+                    class="col-span-3"
                   />
                 </div>
               </div>

@@ -1,7 +1,8 @@
 use reqwest::Client as HttpClient;
 use serde::Deserialize;
+use std::time::Duration;
 
-use super::{connection_timeout, with_connection_timeout};
+use super::with_connection_timeout;
 use crate::db::mongo_driver::MongoDocumentResult;
 
 pub struct EsClient {
@@ -11,13 +12,19 @@ pub struct EsClient {
 }
 
 impl EsClient {
-    pub fn new(url: &str, username: Option<&str>, password: Option<&str>, accept_invalid_certs: bool) -> Self {
+    pub fn new(
+        url: &str,
+        username: Option<&str>,
+        password: Option<&str>,
+        accept_invalid_certs: bool,
+        timeout: Duration,
+    ) -> Self {
         let auth = match (username, password) {
             (Some(u), Some(p)) if !u.is_empty() => Some((u.to_string(), p.to_string())),
             _ => None,
         };
         let http = HttpClient::builder()
-            .connect_timeout(connection_timeout())
+            .connect_timeout(timeout)
             .danger_accept_invalid_certs(accept_invalid_certs)
             .build()
             .unwrap_or_else(|_| HttpClient::new());
@@ -59,8 +66,8 @@ impl Clone for EsClient {
     }
 }
 
-pub async fn test_connection(client: &EsClient) -> Result<(), String> {
-    let resp = with_connection_timeout("Elasticsearch", connection_timeout(), async {
+pub async fn test_connection(client: &EsClient, timeout: Duration) -> Result<(), String> {
+    let resp = with_connection_timeout("Elasticsearch", timeout, async {
         client.get("/").send().await.map_err(|e| format!("Elasticsearch connection failed: {e}"))
     })
     .await?;

@@ -1,11 +1,9 @@
 use futures::TryStreamExt;
 use rust_decimal::Decimal;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tiberius::{AuthMethod, Client, ColumnData, Config, FromSql, QueryItem, QueryStream, SqlBrowser};
 use tokio::net::TcpStream;
 use tokio_util::compat::{Compat, TokioAsyncWriteCompatExt};
-
-use super::{connection_timeout, CONNECTION_TIMEOUT_SECS};
 use crate::query::MAX_ROWS;
 use crate::sql::starts_with_executable_sql_keyword;
 use crate::types::{ColumnInfo, DatabaseInfo, ForeignKeyInfo, IndexInfo, QueryResult, TableInfo, TriggerInfo};
@@ -39,10 +37,11 @@ pub async fn connect(
     user: &str,
     pass: &str,
     database: Option<&str>,
+    timeout: Duration,
 ) -> Result<SqlServerClient, String> {
-    match try_connect(host, port, user, pass, database, true).await {
+    match try_connect(host, port, user, pass, database, true, timeout).await {
         Ok(client) => Ok(client),
-        Err(_) => try_connect(host, port, user, pass, database, false).await,
+        Err(_) => try_connect(host, port, user, pass, database, false, timeout).await,
     }
 }
 
@@ -53,6 +52,7 @@ async fn try_connect(
     pass: &str,
     database: Option<&str>,
     use_encryption: bool,
+    timeout: Duration,
 ) -> Result<SqlServerClient, String> {
     let mut config = Config::new();
     let endpoint = sqlserver_endpoint(host);
@@ -72,19 +72,19 @@ async fn try_connect(
     }
 
     let tcp = if endpoint.instance_name.is_some() {
-        tokio::time::timeout(connection_timeout(), TcpStream::connect_named(&config))
+        tokio::time::timeout(timeout, TcpStream::connect_named(&config))
             .await
-            .map_err(|_| format!("SQL Server connection timed out ({CONNECTION_TIMEOUT_SECS}s)"))?
+            .map_err(|_| format!("SQL Server connection timed out ({}s)", timeout.as_secs()))?
             .map_err(|e| format!("SQL Server connection failed: {e}"))?
     } else {
-        tokio::time::timeout(connection_timeout(), TcpStream::connect(config.get_addr()))
+        tokio::time::timeout(timeout, TcpStream::connect(config.get_addr()))
             .await
-            .map_err(|_| format!("SQL Server connection timed out ({CONNECTION_TIMEOUT_SECS}s)"))?
+            .map_err(|_| format!("SQL Server connection timed out ({}s)", timeout.as_secs()))?
             .map_err(|e| format!("SQL Server connection failed: {e}"))?
     };
-    tokio::time::timeout(connection_timeout(), Client::connect(config, tcp.compat_write()))
+    tokio::time::timeout(timeout, Client::connect(config, tcp.compat_write()))
         .await
-        .map_err(|_| format!("SQL Server handshake timed out ({CONNECTION_TIMEOUT_SECS}s)"))?
+        .map_err(|_| format!("SQL Server handshake timed out ({}s)", timeout.as_secs()))?
         .map_err(|e| format!("SQL Server connection failed: {e}"))
 }
 

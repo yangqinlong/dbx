@@ -170,20 +170,21 @@ impl AppState {
         let (host, port) = self.connection_host_port(connection_id, &db_config).await?;
         probe_connection_endpoint(&db_config, &host, port).await?;
         let url = connection_url_for_endpoint(&db_config, &host, port);
+        let connect_timeout = std::time::Duration::from_secs(db_config.effective_connect_timeout_secs());
         let pool = match db_config.db_type {
             DatabaseType::Mysql if db_config.needs_bare_mysql() => {
-                PoolKind::Mysql(db::mysql::connect_bare(&url).await?, MysqlMode::Bare)
+                PoolKind::Mysql(db::mysql::connect_bare(&url, connect_timeout).await?, MysqlMode::Bare)
             }
             DatabaseType::Mysql => {
-                let pool = db::mysql::connect_with_ca_cert(&url, Some(&db_config.ca_cert_path)).await?;
+                let pool = db::mysql::connect_with_ca_cert(&url, Some(&db_config.ca_cert_path), connect_timeout).await?;
                 let mode = detect_ob_oracle_mode(&db_config, &pool).await;
                 PoolKind::Mysql(pool, mode)
             }
             DatabaseType::Doris | DatabaseType::StarRocks => {
-                PoolKind::Mysql(db::mysql::connect_bare(&url).await?, MysqlMode::Bare)
+                PoolKind::Mysql(db::mysql::connect_bare(&url, connect_timeout).await?, MysqlMode::Bare)
             }
             DatabaseType::Postgres | DatabaseType::Redshift | DatabaseType::Gaussdb | DatabaseType::OpenGauss => {
-                PoolKind::Postgres(db::postgres::connect(&url).await?)
+                PoolKind::Postgres(db::postgres::connect(&url, connect_timeout).await?)
             }
             DatabaseType::Sqlite => PoolKind::Sqlite(db::sqlite::connect_path(&expand_tilde(&db_config.host)).await?),
             DatabaseType::Redis => {
@@ -195,7 +196,7 @@ impl AppState {
                     ))
                 } else {
                     db::redis_driver::RedisConnection::Direct(tokio::sync::Mutex::new(
-                        db::redis_driver::connect(&url).await?,
+                        db::redis_driver::connect(&url, connect_timeout).await?,
                     ))
                 };
                 PoolKind::Redis(con)
@@ -211,8 +212,8 @@ impl AppState {
                 PoolKind::DuckDb(con)
             }
             DatabaseType::MongoDb => {
-                let native_err = match db::mongo_driver::connect(&url).await {
-                    Ok(client) => match db::mongo_driver::test_connection(&client).await {
+                let native_err = match db::mongo_driver::connect(&url, connect_timeout).await {
+                    Ok(client) => match db::mongo_driver::test_connection(&client, connect_timeout).await {
                         Ok(()) => {
                             self.connections.write().await.insert(pool_key.clone(), PoolKind::MongoDb(client));
                             return Ok(pool_key);
@@ -239,8 +240,9 @@ impl AppState {
                     username,
                     password,
                     Some(&db_config.ca_cert_path),
+                    connect_timeout,
                 )?;
-                db::clickhouse_driver::test_connection(&client).await?;
+                db::clickhouse_driver::test_connection(&client, connect_timeout).await?;
                 PoolKind::ClickHouse(client)
             }
             DatabaseType::SqlServer => {
@@ -250,6 +252,7 @@ impl AppState {
                     &db_config.username,
                     &db_config.password,
                     db_config.database.as_deref(),
+                    connect_timeout,
                 )
                 .await?;
                 PoolKind::SqlServer(Arc::new(tokio::sync::Mutex::new(client)))
@@ -261,8 +264,9 @@ impl AppState {
                     Some(&db_config.username),
                     Some(&db_config.password),
                     accept_invalid_certs,
+                    connect_timeout,
                 );
-                db::elasticsearch_driver::test_connection(&client).await?;
+                db::elasticsearch_driver::test_connection(&client, connect_timeout).await?;
                 PoolKind::Elasticsearch(client)
             }
             DatabaseType::Dameng
@@ -820,7 +824,8 @@ pub async fn probe_connection_endpoint(config: &ConnectionConfig, host: &str, po
     if !uses_tcp_probe(config, host, port) {
         return Ok(());
     }
-    db::probe_tcp_endpoint(&format!("{:?}", config.db_type), host, port).await
+    let timeout = std::time::Duration::from_secs(config.effective_connect_timeout_secs());
+    db::probe_tcp_endpoint(&format!("{:?}", config.db_type), host, port, timeout).await
 }
 
 fn uses_tcp_probe(config: &ConnectionConfig, host: &str, port: u16) -> bool {

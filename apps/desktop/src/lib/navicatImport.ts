@@ -164,6 +164,7 @@ async function parseConnection(node: ParsedNode): Promise<ConnectionConfig | nul
     ssh_key_passphrase: "",
     ssh_expose_lan: false,
     ssh_connect_timeout_secs: 5,
+    connect_timeout_secs: 5,
     ssl: false,
     oracle_connection_type: oracleConnectionType,
     connection_string: undefined,

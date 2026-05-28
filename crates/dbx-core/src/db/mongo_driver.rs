@@ -4,7 +4,8 @@ use mongodb::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::{connection_timeout, with_connection_timeout, CONNECTION_TIMEOUT_SECS};
+use super::with_connection_timeout;
+use std::time::Duration;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MongoDocumentResult {
@@ -12,17 +13,17 @@ pub struct MongoDocumentResult {
     pub total: u64,
 }
 
-pub async fn connect(url: &str) -> Result<Client, String> {
-    with_connection_timeout("MongoDB", connection_timeout(), async {
+pub async fn connect(url: &str, timeout: Duration) -> Result<Client, String> {
+    with_connection_timeout("MongoDB", timeout, async {
         Client::with_uri_str(url).await.map_err(|e| format!("MongoDB connection failed: {e}"))
     })
     .await
 }
 
-pub async fn test_connection(client: &Client) -> Result<(), String> {
-    tokio::time::timeout(connection_timeout(), client.list_database_names())
+pub async fn test_connection(client: &Client, timeout: Duration) -> Result<(), String> {
+    tokio::time::timeout(timeout, client.list_database_names())
         .await
-        .map_err(|_| format!("MongoDB connection timed out ({CONNECTION_TIMEOUT_SECS}s)"))?
+        .map_err(|_| format!("MongoDB connection timed out ({}s)", timeout.as_secs()))?
         .map(|_| ())
         .map_err(|e| format!("MongoDB connection failed: {e}"))
 }
