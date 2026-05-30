@@ -301,6 +301,7 @@ const dataTabsMenuContainerClass = computed(() =>
           <X class="h-3 w-3" />
         </button>
       </div>
+      <div class="min-w-8 flex-1 self-stretch" data-tauri-drag-region />
     </div>
     <div
       v-if="canScrollRight"

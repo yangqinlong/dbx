@@ -57,8 +57,10 @@ defineExpose({ focusSearch });
         class="flex items-center px-3 text-xs font-medium text-muted-foreground border-b bg-muted/20"
         :class="classicLayout ? 'h-9' : 'h-10'"
       >
-        {{ t("sidebar.connections") }}
-        <span class="flex-1" />
+        <span class="flex self-stretch items-center truncate" data-tauri-drag-region>{{
+          t("sidebar.connections")
+        }}</span>
+        <span class="flex-1 self-stretch" data-tauri-drag-region />
         <Tooltip>
           <TooltipTrigger as-child>
             <Button variant="ghost" size="icon" class="h-5 w-5" @click="refreshTree">
