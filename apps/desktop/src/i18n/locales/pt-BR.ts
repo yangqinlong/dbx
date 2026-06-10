@@ -974,6 +974,7 @@
     unpin: "Desafixar",
     refreshTab: "Atualizar Dados",
     renameTab: "Renomear Aba",
+    duplicateTab: "Duplicar Aba",
     compactTabTitle: "Encurtar Títulos das Abas",
     closeTab: "Fechar Aba",
     closeOtherTabs: "Fechar Outras Abas",

@@ -1009,6 +1009,7 @@
     unpin: "取消置顶",
     refreshTab: "刷新数据",
     renameTab: "重命名标签页",
+    duplicateTab: "复制标签页",
     compactTabTitle: "缩短标签标题",
     closeTab: "关闭标签页",
     closeOtherTabs: "关闭其他标签页",

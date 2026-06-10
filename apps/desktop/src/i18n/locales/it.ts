@@ -974,6 +974,7 @@
     unpin: "Sblocca",
     refreshTab: "Aggiorna Dati",
     renameTab: "Rinomina Scheda",
+    duplicateTab: "Duplica Scheda",
     compactTabTitle: "Accorcia Titoli Schede",
     closeTab: "Chiudi Scheda",
     closeOtherTabs: "Chiudi Altre Schede",

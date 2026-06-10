@@ -397,6 +397,69 @@ export const useQueryStore = defineStore("query", () => {
     activeTabId.value = next.activeTabId;
   }
 
+  function duplicateTab(id: string) {
+    const idx = tabs.value.findIndex((t) => t.id === id);
+    if (idx < 0) return;
+    const original = tabs.value[idx];
+    const newId = uuid();
+    const newTab: QueryTab = {
+      id: newId,
+      title: original.title,
+      customTitle: original.customTitle,
+      connectionId: original.connectionId,
+      database: original.database,
+      schema: original.schema,
+      sql: original.sql,
+      savedSqlId: original.savedSqlId,
+      lastExecutedSql: undefined,
+      resultBaseSql: original.resultBaseSql,
+      resultSortedSql: undefined,
+      resultSortColumn: undefined,
+      resultSortColumnIndex: undefined,
+      resultSortDirection: undefined,
+      orderByInput: undefined,
+      resultPageSql: undefined,
+      resultPageLimit: undefined,
+      resultPageOffset: undefined,
+      resultCountSql: undefined,
+      resultTotalRowCount: undefined,
+      resultTotalRowCountLoading: undefined,
+      resultSessionId: undefined,
+      resultAccessedAt: undefined,
+      resultCacheKey: undefined,
+      resultCacheState: undefined,
+      pinned: false,
+      result: undefined,
+      results: undefined,
+      activeResultIndex: undefined,
+      explainPlan: undefined,
+      explainError: undefined,
+      explainSql: undefined,
+      lastExplainedSql: undefined,
+      isExecuting: false,
+      isCancelling: false,
+      queryExecutionStartedAt: undefined,
+      editorViewport: undefined,
+      editorSelection: undefined,
+      executionId: undefined,
+      isExplaining: false,
+      explainExecutionId: undefined,
+      mode: original.mode,
+      structureTableName: original.structureTableName,
+      objectBrowser: original.objectBrowser ? { ...original.objectBrowser } : undefined,
+      objectSource: original.objectSource ? { ...original.objectSource } : undefined,
+      tableMeta: original.tableMeta ? { ...original.tableMeta, columns: [...original.tableMeta.columns], primaryKeys: [...original.tableMeta.primaryKeys] } : undefined,
+      queryAnalysis: original.queryAnalysis ? { ...original.queryAnalysis, columns: original.queryAnalysis.columns.map((c) => ({ ...c })) } : undefined,
+      querySourceColumns: original.querySourceColumns ? [...original.querySourceColumns] : undefined,
+      queryEditabilityReason: original.queryEditabilityReason,
+      resultEvicted: undefined,
+      whereInput: original.whereInput,
+      previewSql: original.previewSql,
+    };
+    tabs.value.splice(idx + 1, 0, newTab);
+    activeTabId.value = newId;
+  }
+
   function closeTabsWhere(predicate: (tab: QueryTab) => boolean) {
     const closingIds = new Set(tabs.value.filter((tab) => predicate(tab)).map((tab) => tab.id));
     if (closingIds.size === 0) return;
@@ -1535,6 +1598,7 @@ export const useQueryStore = defineStore("query", () => {
     closeTab,
     closeOtherTabs,
     closeAllTabs,
+    duplicateTab,
     closeConnectionTabs,
     closeDatabaseTabs,
     releaseConnectionTabs,

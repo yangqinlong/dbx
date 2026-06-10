@@ -873,6 +873,7 @@
     unpin: "Desfijar",
     refreshTab: "Actualizar datos",
     renameTab: "Renombrar pestaña",
+    duplicateTab: "Duplicar pestaña",
     closeTab: "Cerrar pestaña",
     closeOtherTabs: "Cerrar otras pestañas",
     closeAllTabs: "Cerrar todas las pestañas",

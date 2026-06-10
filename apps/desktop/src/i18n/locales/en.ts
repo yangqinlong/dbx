@@ -1010,6 +1010,7 @@
     unpin: "Unpin",
     refreshTab: "Refresh Data",
     renameTab: "Rename Tab",
+    duplicateTab: "Duplicate Tab",
     compactTabTitle: "Shorten Tab Titles",
     closeTab: "Close Tab",
     closeOtherTabs: "Close Other Tabs",

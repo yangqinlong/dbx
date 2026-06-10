@@ -953,6 +953,7 @@
     unpin: "取消置頂",
     refreshTab: "重新整理資料",
     renameTab: "重新命名分頁",
+    duplicateTab: "複製分頁",
     compactTabTitle: "縮短標籤標題",
     closeTab: "關閉分頁",
     closeOtherTabs: "關閉其他分頁",

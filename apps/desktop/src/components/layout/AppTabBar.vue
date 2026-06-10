@@ -2,7 +2,7 @@
 import { computed, ref, watch, nextTick } from "vue";
 import type { CSSProperties } from "vue";
 import { useI18n } from "vue-i18n";
-import { X, Pin, ChevronDown, Table2, Code2, TableProperties, PencilRuler, KeyRound, Pencil, Package, Check, Lock } from "@lucide/vue";
+import { X, Pin, ChevronDown, Table2, Code2, TableProperties, PencilRuler, KeyRound, Pencil, Package, Check, Lock, Copy } from "@lucide/vue";
 import CustomContextMenu, { type ContextMenuItem } from "@/components/ui/CustomContextMenu.vue";
 import LightDropdown from "@/components/ui/LightDropdown.vue";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
@@ -81,6 +81,12 @@ function getTabMenuItems(tab: QueryTab): ContextMenuItem[] {
       label: t("contextMenu.renameTab"),
       action: () => startRenameTab(tab),
       icon: Pencil,
+      visible: canRenameTab(tab),
+    },
+    {
+      label: t("contextMenu.duplicateTab"),
+      action: () => queryStore.duplicateTab(tab.id),
+      icon: Copy,
       visible: canRenameTab(tab),
     },
     { label: "", separator: true },
