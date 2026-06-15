@@ -572,6 +572,9 @@ pub fn agent_close_query_session_params(session_id: &str) -> serde_json::Value {
 
 pub fn is_connection_error(err: &str) -> bool {
     let lower = err.to_lowercase();
+    if is_dbx_query_timeout_error(&lower) {
+        return false;
+    }
     lower.contains("connection")
         || lower.contains("broken pipe")
         || lower.contains("reset by peer")
@@ -586,6 +589,10 @@ pub fn is_connection_error(err: &str) -> bool {
         || lower.contains("idle")
         || lower.contains("communicating with the server")
         || is_os_connection_error(&lower)
+}
+
+fn is_dbx_query_timeout_error(lower: &str) -> bool {
+    lower.starts_with("query timed out after ")
 }
 
 fn is_os_connection_error(lower: &str) -> bool {
@@ -1823,6 +1830,7 @@ mod tests {
 
     #[test]
     fn is_connection_error_rejects_non_connection_errors() {
+        assert!(!is_connection_error("Query timed out after 30 seconds"));
         assert!(!is_connection_error("ORA-00942: table or view does not exist"));
         assert!(!is_connection_error("syntax error at position 5"));
         assert!(!is_connection_error("os error 13"));
