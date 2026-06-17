@@ -992,7 +992,9 @@ pub async fn list_tables(pool: &MySqlPool, database: &str) -> Result<Vec<TableIn
             (!name.is_empty()).then_some(TableInfo {
                 name,
                 table_type: get_str_by_name(row, "TABLE_TYPE"),
-                comment: get_opt_str(row, "TABLE_COMMENT").filter(|s| !s.is_empty()),
+                comment: get_opt_str(row, "TABLE_COMMENT")
+                    .map(|s| fix_potential_double_encoding(&s))
+                    .filter(|s| !s.is_empty()),
                 parent_schema: None,
                 parent_name: None,
             })
@@ -1029,7 +1031,9 @@ async fn list_table_status_show(pool: &MySqlPool, database: &str) -> Result<Hash
             (
                 get_str_by_name(row, "Name"),
                 TableStatusMeta {
-                    comment: get_opt_metadata_string(row, "Comment").filter(|s| !s.is_empty()),
+                    comment: get_opt_metadata_string(row, "Comment")
+                        .map(|s| fix_potential_double_encoding(&s))
+                        .filter(|s| !s.is_empty()),
                     created_at: get_opt_metadata_string(row, "Create_time"),
                     updated_at: get_opt_metadata_string(row, "Update_time"),
                 },
@@ -1152,7 +1156,9 @@ fn row_to_object(row: &mysql_async::Row, database: &str) -> ObjectInfo {
         name: get_str_by_name(row, "object_name"),
         object_type: get_str_by_name(row, "object_type"),
         schema: Some(database.to_string()),
-        comment: get_opt_str(row, "object_comment").filter(|s| !s.is_empty()),
+        comment: get_opt_str(row, "object_comment")
+            .map(|s| fix_potential_double_encoding(&s))
+            .filter(|s| !s.is_empty()),
         created_at: get_opt_str(row, "created_at"),
         updated_at: get_opt_str(row, "updated_at"),
         parent_schema: get_opt_str(row, "parent_schema"),
