@@ -363,6 +363,7 @@ async fn main() {
         .route("/transfer/start", post(routes::transfer::start_transfer))
         .route("/transfer/progress/{transferId}", get(routes::transfer::transfer_progress))
         .route("/transfer/cancel", post(routes::transfer::cancel_transfer))
+        .route("/transfer/sort-tables-by-fk", post(routes::transfer::sort_tables_by_fk_dependency))
         // Database export
         .route("/export/database", post(routes::database_export::start_database_export))
         .route("/export/database/progress/{exportId}", get(routes::database_export::database_export_progress))

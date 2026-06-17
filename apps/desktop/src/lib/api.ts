@@ -221,6 +221,7 @@ export const readExternalSqlFile = forward("readExternalSqlFile");
 // Data Transfer
 export const startTransfer = forward("startTransfer");
 export const cancelTransfer = forward("cancelTransfer");
+export const sortTablesByFkDependency = forward("sortTablesByFkDependency");
 
 // Table File Import
 export const previewTableImportFile = forward("previewTableImportFile");

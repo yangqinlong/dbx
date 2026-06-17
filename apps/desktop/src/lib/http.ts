@@ -1056,6 +1056,18 @@ export async function cancelTransfer(transferId: string): Promise<void> {
   return post("/api/transfer/cancel", { transferId });
 }
 
+export interface SortTablesByFkOptions {
+  connectionId: string;
+  database: string;
+  schema: string;
+  tables: string[];
+  parentsFirst: boolean;
+}
+
+export async function sortTablesByFkDependency(options: SortTablesByFkOptions): Promise<string[]> {
+  return post("/api/transfer/sort-tables-by-fk", options);
+}
+
 // ---------------------------------------------------------------------------
 // Table File Import
 // ---------------------------------------------------------------------------

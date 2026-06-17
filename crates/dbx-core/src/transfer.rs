@@ -2458,6 +2458,101 @@ pub async fn clear_cancelled(transfer_id: &str) {
     CANCELLED.write().await.remove(transfer_id);
 }
 
+/// Sort table names by foreign key dependency.
+///
+/// When `parents_first` is true (data transfer / SQL export), referenced (parent)
+/// tables come before referencing (child) tables so inserts don't violate FK
+/// constraints.
+///
+/// When `parents_first` is false (batch drop), referencing (child) tables come
+/// first so they are dropped before the tables they reference.
+///
+/// Uses Kahn's algorithm for topological sort; tables involved in cycles keep
+/// their original relative order after all cycle-free tables.
+pub async fn sort_tables_by_fk_dependency(
+    state: &AppState,
+    connection_id: &str,
+    database: &str,
+    schema: &str,
+    tables: &[String],
+    parents_first: bool,
+) -> Result<Vec<String>, String> {
+    if tables.len() <= 1 {
+        return Ok(tables.to_vec());
+    }
+
+    let table_set: HashSet<&str> = tables.iter().map(|t| t.as_str()).collect();
+
+    // Gather FK relationships for every table.
+    let mut dependency_map: HashMap<String, Vec<String>> = HashMap::new();
+    for table in tables {
+        let fks = crate::schema::list_foreign_keys_core(state, connection_id, database, schema, table).await?;
+        let deps: Vec<String> = fks
+            .iter()
+            .map(|fk| fk.ref_table.clone())
+            .filter(|ref_table| table_set.contains(ref_table.as_str()))
+            .collect();
+        dependency_map.insert(table.clone(), deps);
+    }
+
+    // Build in-degree and dependents graph.
+    // parents_first=true:  edge ref_table → table     (parent before child)
+    // parents_first=false: edge table → ref_table      (child before parent)
+    let mut in_degree: HashMap<&str, usize> = HashMap::new();
+    let mut dependents: HashMap<&str, Vec<&str>> = HashMap::new();
+
+    for table in tables {
+        in_degree.entry(table.as_str()).or_insert(0);
+    }
+    for table in tables {
+        if let Some(deps) = dependency_map.get(table) {
+            for ref_table in deps {
+                if parents_first {
+                    // FK-bearing table depends on ref_table — parent comes first.
+                    *in_degree.entry(table.as_str()).or_insert(0) += 1;
+                    dependents.entry(ref_table.as_str()).or_default().push(table.as_str());
+                } else {
+                    // ref_table depends on FK-bearing table — child comes first.
+                    *in_degree.entry(ref_table.as_str()).or_insert(0) += 1;
+                    dependents.entry(table.as_str()).or_default().push(ref_table.as_str());
+                }
+            }
+        }
+    }
+
+    // Kahn's algorithm.
+    let mut queue: std::collections::VecDeque<&str> =
+        in_degree.iter().filter(|(_, &deg)| deg == 0).map(|(&table, _)| table).collect();
+
+    let mut sorted: Vec<String> = Vec::new();
+    while let Some(table) = queue.pop_front() {
+        sorted.push(table.to_string());
+        if let Some(deps) = dependents.get(table) {
+            for &dependent in deps {
+                let deg = in_degree.get_mut(dependent).unwrap();
+                *deg -= 1;
+                if *deg == 0 {
+                    queue.push_back(dependent);
+                }
+            }
+        }
+    }
+
+    // Append any tables left behind by cycles in their original order.
+    if sorted.len() < tables.len() {
+        let sorted_set: HashSet<&str> = sorted.iter().map(|s| s.as_str()).collect();
+        let mut remaining: Vec<String> = Vec::new();
+        for table in tables {
+            if !sorted_set.contains(table.as_str()) {
+                remaining.push(table.clone());
+            }
+        }
+        sorted.extend(remaining);
+    }
+
+    Ok(sorted)
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn transfer_mongodb_table<F>(
     state: &AppState,
