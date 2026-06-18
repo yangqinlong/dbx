@@ -36,6 +36,7 @@ import {
   buildTableTreeNodes,
   expandCachedObjectBrowserNodes,
   mergeTableInfosIntoObjects,
+  mergeTableTreePageChildren,
   objectGroupRefreshParentId,
   objectTypesForGroupNode,
   tablePartitionGroups,
@@ -1570,7 +1571,8 @@ export const useConnectionStore = defineStore("connection", () => {
         pageSize: node.loadMore.pageSize,
       });
       const currentChildren = withoutLoadMoreNodes(parent.children);
-      const nextChildren = page.hasMore ? [...currentChildren, ...page.children, buildLoadMoreNode(parent, page.nextOffset, node.loadMore.pageSize)] : [...currentChildren, ...page.children];
+      const mergedChildren = mergeTableTreePageChildren(currentChildren, page.children, parent.connectionId, parent.database);
+      const nextChildren = page.hasMore ? [...mergedChildren, buildLoadMoreNode(parent, page.nextOffset, node.loadMore.pageSize)] : mergedChildren;
       parent.objectCount = (parent.objectCount ?? currentChildren.length) + page.objectCount;
       setChildren(parent, nextChildren);
       await savePersistedTreeChildren(objectGroupCacheKey(parent), nextChildren);

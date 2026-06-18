@@ -473,6 +473,8 @@ export interface TreeNode {
   objectCount?: number;
   loadedKeyCount?: number;
   totalKeyCount?: number;
+  partitionParentSchema?: string;
+  partitionParentName?: string;
   hiddenChildren?: TreeNode[];
   savedSqlId?: string;
   savedSqlFolderId?: string;
