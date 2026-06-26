@@ -90,21 +90,84 @@ public final class KingbaseAgent extends PostgresLikeAgent {
 
     @Override
     public List<TableInfo> listTables(String schema) {
-        return listTables(schema, "table_type = 'BASE TABLE'");
+        if (isMysqlCompatMode()) {
+            return listTables(schema, "table_type IN ('BASE TABLE', 'VIEW')");
+        }
+        return unchecked(() -> {
+            List<TableInfo> result = new ArrayList<>();
+            String sql = "SELECT c.relname AS table_name, " +
+                "CASE c.relkind " +
+                "WHEN 'r' THEN 'TABLE' " +
+                "WHEN 'p' THEN 'TABLE' " +
+                "WHEN 'v' THEN 'VIEW' " +
+                "WHEN 'm' THEN 'MATERIALIZED_VIEW' " +
+                "WHEN 'f' THEN 'FOREIGN_TABLE' " +
+                "ELSE 'TABLE' END AS table_type, " +
+                "d.description AS table_comment " +
+                "FROM sys_catalog.sys_class c " +
+                "JOIN sys_catalog.sys_namespace n ON n.oid = c.relnamespace " +
+                "LEFT JOIN sys_catalog.sys_description d ON d.objoid = c.oid AND d.objsubid = 0 " +
+                "WHERE n.nspname = ? AND c.relkind IN ('r','p','v','m','f') " +
+                "ORDER BY c.relname";
+            try (PreparedStatement stmt = requireConnected().prepareStatement(sql)) {
+                stmt.setString(1, effectiveSchema(schema));
+                try (ResultSet rs = stmt.executeQuery()) {
+                    while (rs.next()) {
+                        result.add(new TableInfo(
+                            rs.getString("table_name"),
+                            normalizeTableType(rs.getString("table_type")),
+                            rs.getString("table_comment")
+                        ));
+                    }
+                }
+            }
+            return result;
+        });
     }
 
     @Override
     public List<ObjectInfo> listObjects(String schema) {
-        List<ObjectInfo> result = new ArrayList<>();
-        for (TableInfo table : listTables(schema)) {
-            result.add(new ObjectInfo(table.getName(), table.getTable_type(), effectiveSchema(schema), table.getComment()));
-        }
-        return result;
+        return unchecked(() -> {
+            String effectiveSchema = effectiveSchema(schema);
+            List<ObjectInfo> result = new ArrayList<>();
+            for (TableInfo table : listTables(effectiveSchema)) {
+                result.add(new ObjectInfo(table.getName(), table.getTable_type(), effectiveSchema, table.getComment()));
+            }
+            if (isMysqlCompatMode()) {
+                return result;
+            }
+
+            String sql = "SELECT p.proname AS routine_name, " +
+                "CASE p.prokind WHEN 'p' THEN 'PROCEDURE' ELSE 'FUNCTION' END AS routine_type, " +
+                "d.description AS routine_comment " +
+                "FROM sys_catalog.sys_proc p " +
+                "JOIN sys_catalog.sys_namespace n ON n.oid = p.pronamespace " +
+                "LEFT JOIN sys_catalog.sys_description d ON d.objoid = p.oid AND d.objsubid = 0 " +
+                "WHERE n.nspname = ? AND p.prokind IN ('p','f') " +
+                "ORDER BY p.proname";
+            try (PreparedStatement stmt = requireConnected().prepareStatement(sql)) {
+                stmt.setString(1, effectiveSchema);
+                try (ResultSet rs = stmt.executeQuery()) {
+                    while (rs.next()) {
+                        result.add(new ObjectInfo(
+                            rs.getString("routine_name"),
+                            rs.getString("routine_type"),
+                            effectiveSchema,
+                            rs.getString("routine_comment")
+                        ));
+                    }
+                }
+            }
+            return result;
+        });
     }
 
     @Override
     public ObjectSource getObjectSource(String schema, String name, String objectType) {
-        if (!"VIEW".equalsIgnoreCase(objectType)) {
+        if ("FUNCTION".equalsIgnoreCase(objectType) || "PROCEDURE".equalsIgnoreCase(objectType)) {
+            return routineSource(schema, name, objectType);
+        }
+        if (!"VIEW".equalsIgnoreCase(objectType) && !"MATERIALIZED_VIEW".equalsIgnoreCase(objectType)) {
             return new ObjectSource(name, objectType, effectiveSchema(schema), "");
         }
         return unchecked(() -> {
@@ -117,6 +180,29 @@ public final class KingbaseAgent extends PostgresLikeAgent {
                 try (ResultSet rs = stmt.executeQuery(sql)) {
                     if (rs.next()) {
                         source = coalesce(rs.getString("view_definition"));
+                    }
+                }
+            }
+            return new ObjectSource(name, objectType, effectiveSchema(schema), source);
+        });
+    }
+
+    private ObjectSource routineSource(String schema, String name, String objectType) {
+        return unchecked(() -> {
+            String source = "";
+            String prokind = "PROCEDURE".equalsIgnoreCase(objectType) ? "p" : "f";
+            String sql = "SELECT sys_get_functiondef(p.oid) AS source " +
+                "FROM sys_catalog.sys_proc p " +
+                "JOIN sys_catalog.sys_namespace n ON n.oid = p.pronamespace " +
+                "WHERE n.nspname = ? AND p.proname = ? AND p.prokind = ? " +
+                "ORDER BY p.oid LIMIT 1";
+            try (PreparedStatement stmt = requireConnected().prepareStatement(sql)) {
+                stmt.setString(1, effectiveSchema(schema));
+                stmt.setString(2, name);
+                stmt.setString(3, prokind);
+                try (ResultSet rs = stmt.executeQuery()) {
+                    if (rs.next()) {
+                        source = coalesce(rs.getString("source"));
                     }
                 }
             }
