@@ -2150,6 +2150,7 @@ onUnmounted(cleanupPreviewEditor);
                         >
                           <X class="h-4 w-4" />
                         </Button>
+                        <span v-else-if="editingShortcutId !== definition.id" class="h-7 w-7 shrink-0" aria-hidden="true" />
                       </div>
                       <p v-if="shortcutConflicts.includes(definition.id)" class="text-xs text-destructive">
                         {{ t("settings.shortcutConflict") }}
@@ -2830,6 +2831,7 @@ onUnmounted(cleanupPreviewEditor);
                       >
                         <X class="h-4 w-4" />
                       </Button>
+                      <span v-else-if="editingShortcutId !== definition.id" class="h-7 w-7 shrink-0" aria-hidden="true" />
                     </div>
                     <p v-if="shortcutConflicts.includes(definition.id)" class="text-xs text-destructive">
                       {{ t("settings.shortcutConflict") }}
