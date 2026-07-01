@@ -14,7 +14,7 @@ import { buildExecutionCandidates, hasMultipleExecutionTargets, supportsExecutio
 import { executableStatementRangeCacheForDoc, executableStatementRangeStartingAt as executableStatementRangeStartingAtLine, type ExecutableStatementRangeCache } from "@/lib/executableStatementRangeCache";
 import { formatSqlText, type SqlFormatDialect } from "@/lib/sqlFormatter";
 import { formatMongoShellText } from "@/lib/mongoFormatter";
-import { useConnectionStore } from "@/stores/connectionStore";
+import { useConnectionStore, COMPLETION_METADATA_CONCURRENCY } from "@/stores/connectionStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useTheme } from "@/composables/useTheme";
 import { useToast } from "@/composables/useToast";
@@ -801,7 +801,9 @@ async function ensureForeignKeysForTables(tables: Array<{ name: string; schema?:
     seen.add(key);
     return true;
   });
-  await Promise.all(uniqueTables.map((table) => ensureForeignKeysForTable(table)));
+  for (let index = 0; index < uniqueTables.length; index += COMPLETION_METADATA_CONCURRENCY) {
+    await Promise.all(uniqueTables.slice(index, index + COMPLETION_METADATA_CONCURRENCY).map((table) => ensureForeignKeysForTable(table)));
+  }
 }
 
 function createHoverDom(title: string, detail: string, rows: string[] = []) {
