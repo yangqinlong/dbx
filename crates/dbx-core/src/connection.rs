@@ -973,7 +973,12 @@ impl AppState {
                     })
                     .collect();
                 PoolKind::Sqlite(
-                    db::sqlite::connect_path_with_extensions(&expand_tilde(&db_config.host), extensions).await?,
+                    db::sqlite::connect_path_with_cipher_key_and_extensions(
+                        &expand_tilde(&db_config.host),
+                        &db_config.password,
+                        extensions,
+                    )
+                    .await?,
                 )
             }
             DatabaseType::Rqlite => {

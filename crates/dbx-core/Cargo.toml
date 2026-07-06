@@ -12,9 +12,10 @@ test = false
 bench = false
 
 [features]
-default = ["duckdb-bundled", "mq-admin"]
+default = ["duckdb-bundled", "mq-admin", "sqlite-sqlcipher"]
 duckdb-bundled = ["duckdb/bundled"]
 mq-admin = []
+sqlite-sqlcipher = ["rusqlite/bundled-sqlcipher-vendored-openssl"]
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }

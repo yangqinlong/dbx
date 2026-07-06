@@ -40,34 +40,50 @@ impl SqliteHandle {
 }
 
 pub async fn connect_path(path: &str) -> Result<SqliteHandle, String> {
-    connect_path_with_options(path, false, Vec::new()).await
+    connect_path_with_options(path, false, None, Vec::new()).await
 }
 
 pub async fn connect_path_with_extensions(
     path: &str,
     extensions: Vec<SqliteExtensionSpec>,
 ) -> Result<SqliteHandle, String> {
-    connect_path_with_options(path, false, extensions).await
+    connect_path_with_options(path, false, None, extensions).await
+}
+
+pub async fn connect_path_with_cipher_key_and_extensions(
+    path: &str,
+    cipher_key: &str,
+    extensions: Vec<SqliteExtensionSpec>,
+) -> Result<SqliteHandle, String> {
+    connect_path_with_options(path, false, sqlite_cipher_key(cipher_key), extensions).await
 }
 
 pub async fn connect_path_create_if_missing(path: &str) -> Result<SqliteHandle, String> {
-    connect_path_with_options(path, true, Vec::new()).await
+    connect_path_with_options(path, true, None, Vec::new()).await
 }
 
 pub async fn connect_path_create_if_missing_with_extensions(
     path: &str,
     extensions: Vec<SqliteExtensionSpec>,
 ) -> Result<SqliteHandle, String> {
-    connect_path_with_options(path, true, extensions).await
+    connect_path_with_options(path, true, None, extensions).await
+}
+
+pub async fn connect_path_create_if_missing_with_cipher_key(
+    path: &str,
+    cipher_key: &str,
+) -> Result<SqliteHandle, String> {
+    connect_path_with_options(path, true, sqlite_cipher_key(cipher_key), Vec::new()).await
 }
 
 async fn connect_path_with_options(
     path: &str,
     create_if_missing: bool,
+    cipher_key: Option<String>,
     extensions: Vec<SqliteExtensionSpec>,
 ) -> Result<SqliteHandle, String> {
     let path = path.to_string();
-    tokio::task::spawn_blocking(move || open_sqlite_handle(&path, create_if_missing, extensions))
+    tokio::task::spawn_blocking(move || open_sqlite_handle(&path, create_if_missing, cipher_key, extensions))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -75,9 +91,12 @@ async fn connect_path_with_options(
 fn open_sqlite_handle(
     path: &str,
     create_if_missing: bool,
+    cipher_key: Option<String>,
     extensions: Vec<SqliteExtensionSpec>,
 ) -> Result<SqliteHandle, String> {
     let is_memory = is_memory_database_path(path);
+    let encrypted = cipher_key.as_deref().is_some_and(|key| !key.is_empty());
+    ensure_sqlcipher_available(encrypted)?;
     if !is_memory && !create_if_missing {
         validate_file_path(path, is_network_path)?;
     }
@@ -85,7 +104,7 @@ fn open_sqlite_handle(
     if !is_memory && create_if_missing {
         ensure_parent_dir(path)?;
     }
-    if !is_memory && !is_network_path(path) {
+    if !is_memory && !is_network_path(path) && !encrypted {
         validate_existing_sqlite_file(path)?;
     }
 
@@ -105,11 +124,53 @@ fn open_sqlite_handle(
         }
     };
 
+    apply_sqlcipher_key(&conn, cipher_key.as_deref())?;
     conn.busy_timeout(std::time::Duration::from_secs(10)).map_err(|e| e.to_string())?;
     load_sqlite_extensions(&conn, &extensions)?;
     register_sqlite_compat_functions(&conn)?;
 
     Ok(SqliteHandle { conn: Arc::new(Mutex::new(conn)) })
+}
+
+fn sqlite_cipher_key(cipher_key: &str) -> Option<String> {
+    if cipher_key.is_empty() {
+        None
+    } else {
+        Some(cipher_key.to_string())
+    }
+}
+
+#[cfg(feature = "sqlite-sqlcipher")]
+fn ensure_sqlcipher_available(_encrypted: bool) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(not(feature = "sqlite-sqlcipher"))]
+fn ensure_sqlcipher_available(encrypted: bool) -> Result<(), String> {
+    if encrypted {
+        Err("SQLCipher support is not compiled in this build. Rebuild with the sqlite-sqlcipher feature.".to_string())
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(feature = "sqlite-sqlcipher")]
+fn apply_sqlcipher_key(conn: &Connection, cipher_key: Option<&str>) -> Result<(), String> {
+    let Some(cipher_key) = cipher_key.filter(|key| !key.is_empty()) else {
+        return Ok(());
+    };
+
+    // SQLCipher requires the key before the first schema read; the verification
+    // query turns wrong keys into an immediate connection error.
+    conn.pragma_update(None, "key", cipher_key).map_err(|e| format!("SQLCipher key setup failed: {e}"))?;
+    conn.query_row("SELECT count(*) FROM sqlite_master", [], |_| Ok(()))
+        .map_err(|e| format!("SQLCipher database unlock failed. Check the SQLite password/key and file type: {e}"))?;
+    Ok(())
+}
+
+#[cfg(not(feature = "sqlite-sqlcipher"))]
+fn apply_sqlcipher_key(_conn: &Connection, _cipher_key: Option<&str>) -> Result<(), String> {
+    Ok(())
 }
 
 fn register_sqlite_compat_functions(conn: &Connection) -> Result<(), String> {
@@ -461,6 +522,53 @@ mod tests {
         assert_eq!(result.rows[0][0], serde_json::json!("t"));
 
         let _ = std::fs::remove_file(path);
+    }
+
+    #[cfg(feature = "sqlite-sqlcipher")]
+    #[tokio::test]
+    async fn sqlcipher_key_creates_and_reopens_encrypted_database() {
+        let path = std::env::temp_dir().join(format!("dbx-sqlcipher-{}.db", uuid::Uuid::new_v4()));
+        let key = "secret key";
+
+        {
+            let pool = connect_path_create_if_missing_with_cipher_key(path.to_str().unwrap(), key)
+                .await
+                .expect("create encrypted sqlite");
+            execute_query(&pool, "CREATE TABLE t (name TEXT); INSERT INTO t VALUES ('encrypted');")
+                .await
+                .expect("write encrypted sqlite");
+        }
+
+        assert!(!path_has_sqlite_header(&path).expect("inspect encrypted header"));
+
+        let reopened = connect_path_with_cipher_key_and_extensions(path.to_str().unwrap(), key, Vec::new())
+            .await
+            .expect("reopen encrypted sqlite");
+        let result = execute_query(&reopened, "SELECT name FROM t").await.expect("read encrypted sqlite");
+        assert_eq!(result.rows[0][0], serde_json::json!("encrypted"));
+
+        let wrong_key =
+            match connect_path_with_cipher_key_and_extensions(path.to_str().unwrap(), "wrong key", Vec::new()).await {
+                Ok(_) => panic!("wrong key must fail"),
+                Err(err) => err,
+            };
+        assert!(wrong_key.contains("SQLCipher database unlock failed"));
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[cfg(not(feature = "sqlite-sqlcipher"))]
+    #[tokio::test]
+    async fn sqlcipher_key_requires_sqlcipher_feature() {
+        let err =
+            match connect_path_with_cipher_key_and_extensions("/tmp/dbx-missing-sqlcipher.db", "secret", Vec::new())
+                .await
+            {
+                Ok(_) => panic!("SQLCipher key should require feature support"),
+                Err(err) => err,
+            };
+
+        assert!(err.contains("SQLCipher support is not compiled"));
     }
 
     #[test]
