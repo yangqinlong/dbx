@@ -91,17 +91,18 @@ export function percentileValue(values: number[], percentile: number): number {
   return sorted[idx];
 }
 
-export function calculateDataGridColumnWidth(options: { columnName: string; sampleValues: readonly CellValue[]; maxWidth?: number; valueTextLimit?: number; density?: ColumnWidthDensity; compactColumnHeaderActions?: boolean; includeValues?: boolean }): number {
+export function calculateDataGridColumnWidth(options: { columnName: string; sampleValues: readonly CellValue[]; maxWidth?: number; valueTextLimit?: number; density?: ColumnWidthDensity; compactColumnHeaderActions?: boolean; includeValues?: boolean; headerTextWidth?: number }): number {
   const density = options.density ?? "standard";
   const preset = COLUMN_WIDTH_DENSITY_PRESETS[density];
   const maxAllowedWidth = options.maxWidth ?? preset.maxWidth;
   const valueTextLimit = options.valueTextLimit ?? preset.valueTextLimit;
   const headerControl = options.compactColumnHeaderActions ? preset.headerControlWidthCompact : preset.headerControlWidth;
-  const headerWidth = estimateTextWidth(options.columnName, headerControl, preset.charWidth);
+  const headerTextWidth = options.headerTextWidth ?? estimateTextWidth(options.columnName, 0, preset.charWidth);
+  const headerWidth = headerTextWidth + headerControl;
 
-  // Compact defaults to header-only sizing, while explicit auto-fit still measures values.
+  // Density limits cell content, never the column name and its header controls.
   if (density === "compact" && !options.includeValues) {
-    return Math.max(DATA_GRID_COL_MIN_WIDTH, Math.min(maxAllowedWidth, Math.round(headerWidth)));
+    return Math.max(DATA_GRID_COL_MIN_WIDTH, Math.round(headerWidth));
   }
 
   const valueWidths: number[] = [];
@@ -113,7 +114,7 @@ export function calculateDataGridColumnWidth(options: { columnName: string; samp
   }
 
   const valueWidth = percentileValue(valueWidths, preset.valueWidthPercentile);
-  const maxContentWidth = Math.max(headerWidth, valueWidth);
+  const maxContentWidth = Math.max(headerWidth, Math.min(maxAllowedWidth, valueWidth));
 
-  return Math.max(DATA_GRID_COL_MIN_WIDTH, Math.min(maxAllowedWidth, Math.round(maxContentWidth)));
+  return Math.max(DATA_GRID_COL_MIN_WIDTH, Math.round(maxContentWidth));
 }

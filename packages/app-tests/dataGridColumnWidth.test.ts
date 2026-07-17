@@ -32,3 +32,27 @@ test("auto-fit data grid column width stays bounded for very long values", () =>
 
   expect(width).toBe(DATA_GRID_COL_AUTO_FIT_MAX_WIDTH);
 });
+
+test("data grid column width uses measured header text as an uncapped minimum", () => {
+  const width = calculateDataGridColumnWidth({
+    columnName: "AMOUNT",
+    sampleValues: ["1"],
+    density: "comfortable",
+    compactColumnHeaderActions: true,
+    headerTextWidth: 54,
+  });
+
+  expect(width).toBe(113);
+});
+
+test("compact data grid columns keep long field names complete", () => {
+  const width = calculateDataGridColumnWidth({
+    columnName: "x".repeat(100),
+    sampleValues: ["1"],
+    density: "compact",
+    compactColumnHeaderActions: true,
+    headerTextWidth: 700,
+  });
+
+  expect(width).toBe(745);
+});
