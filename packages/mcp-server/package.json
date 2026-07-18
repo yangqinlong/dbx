@@ -29,9 +29,8 @@
   "type": "module",
   "scripts": {
     "start": "cargo run -p dbx-mcp --",
-    "test": "cargo build -p dbx-mcp && pnpm build:legacy && vitest run --config vitest.config.ts",
-    "build": "pnpm build:legacy",
-    "build:legacy": "pnpm --filter @dbx-app/node-core build && tsc",
+    "test": "cargo build -p dbx-mcp && vitest run --config vitest.config.ts",
+    "build": "node --check bin/dbx-mcp-server.js",
     "prepublishOnly": "node bin/dbx-mcp-server.js --verify-platform"
   },
   "optionalDependencies": {
@@ -43,13 +42,8 @@
     "@dbx-app/mcp-win32-x64": "0.4.36"
   },
   "devDependencies": {
-    "@dbx-app/node-core": "workspace:^",
-    "@modelcontextprotocol/sdk": "^1.12.1",
     "@types/node": "^22.15.21",
-    "tsx": "^4.19.4",
-    "typescript": "^5.8.3",
-    "vitest": "^4.1.8",
-    "zod": "^3.25.20"
+    "vitest": "^4.1.8"
   },
   "engines": {
     "node": ">=18.18.0"

@@ -74,8 +74,6 @@ jobs:
           const writeJson = (path, data) => fs.writeFileSync(path, `${JSON.stringify(data, null, 2)}\n`);
 
           for (const path of [
-            "packages/mongo-shell/package.json",
-            "packages/node-core/package.json",
             "packages/cli/package.json",
             "packages/cli-darwin-arm64/package.json",
             "packages/cli-darwin-x64/package.json",
@@ -175,7 +173,7 @@ jobs:
       - name: Commit package release version
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          git add Cargo.lock pnpm-lock.yaml crates/dbx-mcp/Cargo.toml crates/dbx-cli/Cargo.toml packages/mongo-shell/package.json packages/node-core/package.json packages/cli/package.json packages/cli-*/package.json packages/mcp-server/package.json packages/mcp-server/server.json packages/mcp-*/package.json
+          git add Cargo.lock pnpm-lock.yaml crates/dbx-mcp/Cargo.toml crates/dbx-cli/Cargo.toml packages/cli/package.json packages/cli-*/package.json packages/mcp-server/package.json packages/mcp-server/server.json packages/mcp-*/package.json
           if git diff --cached --quiet; then
             echo "Package versions already committed for ${VERSION}."
           else
@@ -207,105 +205,6 @@ jobs:
           if [ -z "${REMOTE_TAG_SHA}" ]; then
             git push origin "refs/tags/${TAG}:refs/tags/${TAG}"
           fi
-
-  publish-mongo-shell:
-    name: Publish mongo-shell
-    runs-on: ubuntu-latest
-    needs: prepare
-
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ needs.prepare.outputs.tag }}
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 22.13.0
-          registry-url: https://registry.npmjs.org
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Publish Mongo shell parser
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          VERSION: ${{ needs.prepare.outputs.version }}
-        run: |
-          PACKAGE_PATH="packages/mongo-shell/package.json"
-          set_package_version() {
-            PACKAGE_PATH="${PACKAGE_PATH}" PACKAGE_VERSION="$1" node <<'NODE'
-          const fs = require("fs");
-          const path = process.env.PACKAGE_PATH;
-          const pkg = JSON.parse(fs.readFileSync(path, "utf8"));
-          pkg.version = process.env.PACKAGE_VERSION;
-          fs.writeFileSync(path, `${JSON.stringify(pkg, null, 2)}\n`);
-          NODE
-          }
-
-          # node-core@0.4.31 already references ^0.1.0, so bootstrap that version once to repair existing installs.
-          if ! npm view "@dbx-app/mongo-shell@0.1.0" version >/dev/null 2>&1; then
-            set_package_version "0.1.0"
-            pnpm --filter @dbx-app/mongo-shell publish --access public --provenance --no-git-checks
-          fi
-
-          set_package_version "${VERSION}"
-          if npm view "@dbx-app/mongo-shell@${VERSION}" version >/dev/null 2>&1; then
-            echo "@dbx-app/mongo-shell@${VERSION} already exists on npm; skipping."
-            exit 0
-          fi
-          pnpm --filter @dbx-app/mongo-shell publish --access public --provenance --no-git-checks
-
-  publish-node-core:
-    name: Publish node-core
-    runs-on: ubuntu-latest
-    # node-core keeps mongo-shell as a runtime dependency, so npm must receive it first.
-    needs: [prepare, publish-mongo-shell]
-    outputs:
-      published-or-existing: ${{ steps.publish.outputs.published_or_existing }}
-
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ needs.prepare.outputs.tag }}
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 22.13.0
-          registry-url: https://registry.npmjs.org
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-
-      - name: Install native build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libsecret-1-dev
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Publish Node core
-        id: publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          VERSION: ${{ needs.prepare.outputs.version }}
-        run: |
-          if npm view "@dbx-app/node-core@${VERSION}" version >/dev/null 2>&1; then
-            echo "@dbx-app/node-core@${VERSION} already exists on npm; skipping."
-            echo "published_or_existing=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          pnpm --filter @dbx-app/node-core publish --access public --provenance --no-git-checks
-          echo "published_or_existing=true" >> "$GITHUB_OUTPUT"
 
   publish-cli-platforms:
     name: Publish ${{ matrix.package-name }}
