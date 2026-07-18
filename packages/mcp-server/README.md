@@ -7,7 +7,7 @@ MCP server for [DBX](https://github.com/t8y2/dbx) — lets AI agents (Claude Cod
 ## Features
 
 - **Zero config** — Automatically reads your DBX connections (including passwords from system keyring)
-- **9 tools** — List/add/remove connections, list tables, describe table, get schema context, execute SQL, execute Redis commands, open table in DBX UI
+- **10 tools** — List/add/remove connections, list tables, describe table, get schema context, execute SQL, execute Redis commands, open tables, and execute-and-show results
 - **Connection pooling** — Reuses database connections across queries
 - **Direct execution** — PostgreSQL, MySQL, SQLite, and compatible databases (Doris, StarRocks, etc.) can run without opening DBX
 - **Writes enabled by default** — regular `INSERT` / `UPDATE` / `DELETE` statements work out of the box, while dangerous SQL stays blocked unless explicitly enabled
@@ -26,6 +26,24 @@ Or run directly:
 ```bash
 npx @dbx-app/mcp-server
 ```
+
+The npm package installs a small Node.js launcher plus a precompiled Rust binary for the current platform. It does not install `better-sqlite3`, compile native modules, or require Rust/Cargo locally. Do not use `--no-optional`, because the platform binary is delivered through npm optional dependencies.
+
+### Offline / native binary
+
+For an offline machine, download the `dbx-mcp` binary matching the operating system and CPU from the DBX release assets, then configure the MCP client to run that file directly:
+
+```json
+{
+  "mcpServers": {
+    "dbx": {
+      "command": "/path/to/dbx-mcp"
+    }
+  }
+}
+```
+
+The native binary works without Node.js and without opening the DBX desktop app for supported direct database connections. Set `DBX_DATA_DIR` when the DBX database is stored outside the default location. `dbx_open_table` and other desktop bridge features still require a running DBX app.
 
 ### 2. Configure Claude Code
 
@@ -173,7 +191,8 @@ PostgreSQL, MySQL, SQLite, Doris, StarRocks, and Redshift queries run directly f
 ## Requirements
 
 - [DBX](https://github.com/t8y2/dbx) installed with at least one connection configured
-- Node.js 22.13.0 或更高版本
+- Node.js 18.18.0 or newer (only used by the npm launcher)
+- Rust, Cargo, Python, and native build tools are not required
 
 ## License
 
@@ -272,6 +291,7 @@ dbx query local "select 1" --json
 | `dbx_execute_query`         | 执行 SQL 查询（最多返回 100 行）      |
 | `dbx_execute_redis_command` | 在 Redis 连接上执行 Redis 命令        |
 | `dbx_open_table`            | 在 DBX 桌面端打开指定表               |
+| `dbx_execute_and_show`      | 执行查询并在 DBX 中展示结果           |
 
 ### SQL 安全
 
@@ -330,4 +350,6 @@ PostgreSQL、MySQL、SQLite、Doris、StarRocks、Redshift 查询可由 MCP Serv
 ### 系统要求
 
 - 已安装 [DBX](https://github.com/t8y2/dbx) 并配置了至少一个数据库连接
-- Node.js 22.13.0 or newer
+- Node.js 18.18.0 或更高版本（仅用于 npm 启动器）
+- 不需要安装 Rust、Cargo、Python 或本地编译工具
+- 离线直接运行原生二进制时不需要安装 Node.js

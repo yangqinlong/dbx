@@ -22,10 +22,21 @@ const PACKAGE_RELEASE_PATHS = [
   "packages/cli/package.json",
   "packages/cli/tsconfig.json",
   "packages/mcp-server/src/",
+  "packages/mcp-server/bin/",
   "packages/mcp-server/README.md",
   "packages/mcp-server/package.json",
   "packages/mcp-server/server.json",
   "packages/mcp-server/tsconfig.json",
+  "packages/mcp-darwin-arm64/",
+  "packages/mcp-darwin-x64/",
+  "packages/mcp-linux-arm64-gnu/",
+  "packages/mcp-linux-x64-gnu/",
+  "packages/mcp-win32-arm64/",
+  "packages/mcp-win32-x64/",
+  "crates/dbx-mcp/",
+  "Cargo.toml",
+  "Cargo.lock",
+  ".github/workflows/mcp-release.yml",
 ];
 const AGENT_RELEASE_PATHS = [
   "agents/build.gradle",
@@ -262,6 +273,12 @@ function getLatestPackageVersion() {
     "packages/node-core/package.json",
     "packages/cli/package.json",
     "packages/mcp-server/package.json",
+    "packages/mcp-darwin-arm64/package.json",
+    "packages/mcp-darwin-x64/package.json",
+    "packages/mcp-linux-arm64-gnu/package.json",
+    "packages/mcp-linux-x64-gnu/package.json",
+    "packages/mcp-win32-arm64/package.json",
+    "packages/mcp-win32-x64/package.json",
   ].map((path) => JSON.parse(readFileSync(path, "utf8")).version);
 
   const uniqueVersions = [...new Set(packageVersions)];
