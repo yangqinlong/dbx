@@ -2,7 +2,9 @@ import { computed, ref, watch } from "vue";
 import type { ConnectionConfig } from "@/types/database";
 import type { SqlCompletionTable } from "@/lib/sql/sqlCompletion";
 import { useConnectionStore } from "@/stores/connectionStore";
+import { useSqlFileStore } from "@/stores/sqlFileStore";
 import { useSavedSqlStore } from "@/stores/savedSqlStore";
+import type { SqlFileEntry } from "@/lib/backend/api";
 
 const REMOTE_SEARCH_DEBOUNCE_MS = 180;
 const REMOTE_SEARCH_MIN_QUERY_LENGTH = 2;
@@ -26,6 +28,7 @@ export interface QuickOpenItem {
   tableName?: string; // Kept for backward compatibility
   connectionName?: string;
   searchText: string; // Lowercase text for searching
+  source?: "library" | "files"; // Distinguishes SQL Library items from SQL Files (opened folders) items
 }
 
 /**
@@ -76,6 +79,7 @@ interface MatchedItem extends QuickOpenItem {
 
 export function useQuickOpen() {
   const connectionStore = useConnectionStore();
+  const sqlFileStore = useSqlFileStore();
   const savedSqlStore = useSavedSqlStore();
   const searchQuery = ref("");
   const selectedIndex = ref(0);
@@ -114,6 +118,28 @@ export function useQuickOpen() {
       processDatabaseTreeNodes(connectionTreeNodes, conn, items);
     }
 
+    // Add files from the "SQL Files" file explorer (opened folders)
+    const pushSqlFileItems = (entries: SqlFileEntry[], rootName: string, prefix: string) => {
+      for (const entry of entries) {
+        const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+        if (entry.is_dir) {
+          pushSqlFileItems(entry.children, rootName, rel);
+        } else {
+          items.push({
+            id: entry.path,
+            type: "sql",
+            label: entry.name,
+            description: `${rootName} / ${rel}`,
+            connectionId: "",
+            searchText: `${entry.name} ${entry.path}`.toLowerCase(),
+          });
+        }
+      }
+    };
+    for (const folder of sqlFileStore.folders) {
+      pushSqlFileItems(folder.entries, folderNameFromPath(folder.path), "");
+    }
+
     // Add saved SQL files from the SQL Library
     for (const file of savedSqlStore.allFiles) {
       const conn = file.connectionId ? connectionStore.getConfig(file.connectionId) : undefined;
@@ -128,6 +154,7 @@ export function useQuickOpen() {
         connectionId: file.connectionId || "",
         database: file.database,
         schema: file.schema,
+        source: "library",
         searchText: [file.name, connName, folderPath, file.database, file.schema].filter(Boolean).join(" ").toLowerCase(),
       });
     }
@@ -320,6 +347,12 @@ export function useQuickOpen() {
       }
     }
     return undefined;
+  }
+
+  function folderNameFromPath(path: string): string {
+    const normalized = path.replace(/\\/g, "/");
+    const parts = normalized.split("/").filter(Boolean);
+    return parts[parts.length - 1] || path;
   }
 
   function getSavedSqlFolderPath(folderId?: string): string {

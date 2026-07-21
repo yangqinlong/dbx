@@ -16,6 +16,7 @@ import { useConnectionStore } from "@/stores/connectionStore";
 import { useQueryStore } from "@/stores/queryStore";
 import { enforceRightSidebarPanelExclusivity, RIGHT_SIDEBAR_PANEL_IDS, transitionRightSidebarPanels, useSettingsStore, type RightSidebarPanelId, type RightSidebarPanelState } from "@/stores/settingsStore";
 import { useSavedSqlStore } from "@/stores/savedSqlStore";
+import { useSqlFileStore } from "@/stores/sqlFileStore";
 import { useToast } from "@/composables/useToast";
 import { useTheme } from "@/composables/useTheme";
 import { useAppUpdater } from "@/composables/useAppUpdater";
@@ -123,6 +124,7 @@ const connectionStore = useConnectionStore();
 const queryStore = useQueryStore();
 const settingsStore = useSettingsStore();
 const savedSqlStore = useSavedSqlStore();
+const sqlFileStore = useSqlFileStore();
 connectionStore.setBeforeConnectHandler((config) => ensureJdbcxRuntimeDrivers(config, api).then(() => undefined));
 const { message: toastMessage, visible: toastVisible, toast } = useToast();
 const { isDark, themeMode, applyTheme, setThemeMode } = useTheme();
@@ -1708,13 +1710,19 @@ async function handleQuickOpenSelect(item: any) {
       toast((error as any)?.message || String(error), 5000);
     }
   } else if (item.type === "sql") {
-    // Open the saved SQL file from the SQL Library
-    const savedSqlStore = useSavedSqlStore();
-    const file = savedSqlStore.getFile(item.id);
-    if (file) {
-      await savedSqlStore.ensureFileContent(file.id);
-      const refreshed = savedSqlStore.getFile(item.id);
-      queryStore.openSavedSql(refreshed ?? file);
+    if (item.source === "library") {
+      // Open the saved SQL file from the SQL Library
+      const savedSqlStore = useSavedSqlStore();
+      const file = savedSqlStore.getFile(item.id);
+      if (file) {
+        await savedSqlStore.ensureFileContent(file.id);
+        const refreshed = savedSqlStore.getFile(item.id);
+        queryStore.openSavedSql(refreshed ?? file);
+      }
+    } else {
+      // Open the SQL file from the SQL Files file explorer (opened folders)
+      const sqlFileStore = useSqlFileStore();
+      await sqlFileStore.openFile(item.id);
     }
   }
 }
@@ -1899,7 +1907,7 @@ async function initApp() {
     console.log(`[STARTUP]   queryStore.initOpenTabs: ${(performance.now() - t0).toFixed(0)}ms`);
     await settingsStore.initDesktopSettings().catch(() => {});
 
-    void Promise.all([initSavedSqlEditorPositions(), savedSqlStore.initFromStorage()])
+    void Promise.all([initSavedSqlEditorPositions(), savedSqlStore.initFromStorage(), sqlFileStore.initFromStorage()])
       .then(() => {
         console.log(`[STARTUP]   savedSqlStore.initFromStorage: ${(performance.now() - t0).toFixed(0)}ms`);
         void queryStore.hydrateSavedSqlTabs();

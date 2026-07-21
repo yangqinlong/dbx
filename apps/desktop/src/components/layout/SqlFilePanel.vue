@@ -8,14 +8,12 @@ import CustomContextMenu, { type ContextMenuItem } from "@/components/ui/CustomC
 import { useQueryStore } from "@/stores/queryStore";
 import { useConnectionStore } from "@/stores/connectionStore";
 import { useToast } from "@/composables/useToast";
+import { useSqlFileStore, type FolderState } from "@/stores/sqlFileStore";
 import { isTauriRuntime } from "@/lib/backend/tauriRuntime";
-import { safeLocalStorageGet, safeLocalStorageSet } from "@/lib/backend/safeStorage";
 import { resolveDefaultDatabase } from "@/lib/database/defaultDatabase";
 import { copyToClipboard } from "@/lib/common/clipboard";
 import * as api from "@/lib/backend/api";
 import type { SqlFileEntry } from "@/lib/backend/api";
-
-const STORAGE_KEY = "dbx-sql-file-folders";
 
 const emit = defineEmits<{
   close: [];
@@ -25,16 +23,8 @@ const { t } = useI18n();
 const queryStore = useQueryStore();
 const connectionStore = useConnectionStore();
 const { toast } = useToast();
-
-interface FolderState {
-  path: string;
-  entries: SqlFileEntry[];
-  expanded: Set<string>;
-  loading: boolean;
-  collapsed: boolean;
-}
-
-const folders = ref<FolderState[]>([]);
+const sqlFileStore = useSqlFileStore();
+const folders = sqlFileStore.folders;
 
 // Right-click target. `kind` discriminates between a folder header, a tree
 // directory entry, and a tree file entry. `folderPath` is the owning top-level
@@ -51,22 +41,6 @@ function selectPath(path: string | null) {
   selectedPath.value = path;
 }
 
-function loadSavedFolders(): string[] {
-  try {
-    const raw = safeLocalStorageGet(STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((p): p is string => typeof p === "string") : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveFolders() {
-  const paths = folders.value.map((f) => f.path);
-  safeLocalStorageSet(STORAGE_KEY, JSON.stringify(paths));
-}
-
 async function pickFolder() {
   if (!isTauriRuntime()) {
     toast(t("sqlFileTree.desktopOnly"), 3000);
@@ -81,77 +55,10 @@ async function pickFolder() {
       toast(t("sqlFileTree.folderAlreadyOpen"), 2000);
       return;
     }
-    await addFolder(folderPath);
+    await sqlFileStore.addFolder(folderPath);
   } catch (e: any) {
     toast(t("sqlFileTree.openFailed", { message: e?.message || String(e) }), 5000);
   }
-}
-
-async function addFolder(folderPath: string) {
-  const folder: FolderState = {
-    path: folderPath,
-    entries: [],
-    expanded: new Set(),
-    loading: true,
-    collapsed: false,
-  };
-  folders.value.push(folder);
-  saveFolders();
-  await loadFolderEntries(folderPath);
-}
-
-// Re-scan a single top-level folder and replace its entries. Mutated via the
-// reactive proxy (folders.value[idx]) so Vue tracks the change — see the note
-// in addFolder above.
-async function loadFolderEntries(folderPath: string) {
-  const idx = folders.value.findIndex((f) => f.path === folderPath);
-  if (idx === -1) return;
-  folders.value[idx].loading = true;
-  try {
-    const entries = await api.listSqlFilesInFolder(folderPath);
-    const target = folders.value.findIndex((f) => f.path === folderPath);
-    if (target !== -1) {
-      folders.value[target].entries = entries;
-      // Drop expand state for paths that no longer exist after the refresh so
-      // stale entries don't keep phantom directories open.
-      const stillPresent = new Set<string>();
-      collectPaths(entries, stillPresent);
-      const nextExpanded = new Set<string>();
-      for (const p of folders.value[target].expanded) {
-        if (stillPresent.has(p)) nextExpanded.add(p);
-      }
-      folders.value[target].expanded = nextExpanded;
-    }
-  } catch (e: any) {
-    toast(t("sqlFileTree.loadFailed", { message: e?.message || String(e) }), 5000);
-  } finally {
-    const target = folders.value.findIndex((f) => f.path === folderPath);
-    if (target !== -1) {
-      folders.value[target].loading = false;
-    }
-  }
-}
-
-function collectPaths(entries: SqlFileEntry[], into: Set<string>) {
-  for (const e of entries) {
-    into.add(e.path);
-    if (e.is_dir && e.children.length) collectPaths(e.children, into);
-  }
-}
-
-async function refreshFolder(folderPath: string) {
-  await loadFolderEntries(folderPath);
-  toast(t("sqlFileTree.refreshed"), 1500);
-}
-
-async function refreshAll() {
-  await Promise.all(folders.value.map((f) => loadFolderEntries(f.path)));
-  toast(t("sqlFileTree.refreshed"), 1500);
-}
-
-async function removeFolder(index: number) {
-  folders.value.splice(index, 1);
-  saveFolders();
 }
 
 async function revealInFileManager(path: string) {
@@ -238,11 +145,8 @@ function folderName(path: string): string {
   return parts.pop() || path;
 }
 
-onMounted(async () => {
-  const saved = loadSavedFolders();
-  for (const path of saved) {
-    await addFolder(path);
-  }
+onMounted(() => {
+  void sqlFileStore.initFromStorage();
 });
 
 type TreeEntry = { entry: SqlFileEntry; depth: number };
@@ -269,7 +173,7 @@ const contextMenuItems = computed<ContextMenuItem[]>(() => {
     const items: ContextMenuItem[] = [{ label: t("sqlFileTree.openFolder"), action: pickFolder, icon: FolderOpen }];
     if (folders.value.length > 0) {
       items.push({ label: "", separator: true });
-      items.push({ label: t("sqlFileTree.refreshAll"), action: refreshAll, icon: RefreshCw });
+      items.push({ label: t("sqlFileTree.refreshAll"), action: sqlFileStore.refreshAll, icon: RefreshCw });
     }
     return items;
   }
@@ -284,9 +188,9 @@ const contextMenuItems = computed<ContextMenuItem[]>(() => {
       { label: t("sqlFileTree.expandAll"), action: () => folder && setAllExpanded(folder, true), icon: ChevronsUpDown, disabled: !folder },
       { label: t("sqlFileTree.collapseAll"), action: () => folder && setAllExpanded(folder, false), icon: ChevronsDownUp, disabled: !folder },
       { label: "", separator: true },
-      { label: t("sqlFileTree.refreshFolder"), action: () => refreshFolder(target.folderPath), icon: RefreshCw },
+      { label: t("sqlFileTree.refreshFolder"), action: () => sqlFileStore.refreshFolder(target.folderPath), icon: RefreshCw },
       { label: "", separator: true },
-      { label: t("sqlFileTree.removeFolder"), action: () => folderIdx !== -1 && removeFolder(folderIdx), icon: Trash2, variant: "destructive" },
+      { label: t("sqlFileTree.removeFolder"), action: () => folderIdx !== -1 && sqlFileStore.removeFolder(folderIdx), icon: Trash2, variant: "destructive" },
     ];
   }
 
@@ -343,7 +247,7 @@ function clearContextTarget() {
       <span class="text-[13px] font-medium">{{ t("sqlFileTree.title") }}</span>
       <span class="flex-1" />
       <LightTooltip v-if="folders.length > 0" :text="t('sqlFileTree.refreshAll')" side="bottom" :delay="0" :close-delay="0" nowrap>
-        <Button variant="ghost" size="icon" class="h-5 w-5" @click="refreshAll">
+        <Button variant="ghost" size="icon" class="h-5 w-5" @click="sqlFileStore.refreshAll">
           <RefreshCw class="h-3 w-3" />
         </Button>
       </LightTooltip>
@@ -401,7 +305,7 @@ function clearContextTarget() {
                 <span class="truncate shrink-0" :title="folder.path">{{ folderName(folder.path) }}</span>
                 <span class="truncate flex-1 text-[10px] text-muted-foreground/50" :title="folder.path">{{ folder.path }}</span>
                 <LightTooltip :text="t('sqlFileTree.refreshFolder')" side="bottom" :delay="0" :close-delay="0" nowrap>
-                  <Button variant="ghost" size="icon" class="h-4 w-4 shrink-0 text-muted-foreground hover:text-foreground" @click.stop="refreshFolder(folder.path)">
+                  <Button variant="ghost" size="icon" class="h-4 w-4 shrink-0 text-muted-foreground hover:text-foreground" @click.stop="sqlFileStore.refreshFolder(folder.path)">
                     <RefreshCw class="h-3 w-3" :class="folder.loading ? 'animate-spin' : ''" />
                   </Button>
                 </LightTooltip>
@@ -411,7 +315,7 @@ function clearContextTarget() {
                   </Button>
                 </LightTooltip>
                 <LightTooltip :text="t('sqlFileTree.removeFolder')" side="bottom" :delay="0" :close-delay="0" nowrap>
-                  <Button variant="ghost" size="icon" class="h-4 w-4 shrink-0 text-muted-foreground hover:text-destructive" @click.stop="removeFolder(fi)">
+                  <Button variant="ghost" size="icon" class="h-4 w-4 shrink-0 text-muted-foreground hover:text-destructive" @click.stop="sqlFileStore.removeFolder(fi)">
                     <Trash2 class="h-3 w-3" />
                   </Button>
                 </LightTooltip>
