@@ -2,6 +2,7 @@ import { computed, ref, watch } from "vue";
 import type { ConnectionConfig } from "@/types/database";
 import type { SqlCompletionTable } from "@/lib/sql/sqlCompletion";
 import { useConnectionStore } from "@/stores/connectionStore";
+import { useSavedSqlStore } from "@/stores/savedSqlStore";
 
 const REMOTE_SEARCH_DEBOUNCE_MS = 180;
 const REMOTE_SEARCH_MIN_QUERY_LENGTH = 2;
@@ -15,7 +16,7 @@ const REMOTE_SEARCH_UNSUPPORTED_TYPES = new Set<ConnectionConfig["db_type"]>(["r
 
 export interface QuickOpenItem {
   id: string;
-  type: "connection" | "database" | "schema" | "table" | "view" | "materialized_view" | "procedure" | "function" | "sequence" | "package" | "package-body";
+  type: "connection" | "database" | "schema" | "table" | "view" | "materialized_view" | "procedure" | "function" | "sequence" | "package" | "package-body" | "sql";
   label: string;
   description?: string;
   connectionId: string;
@@ -75,6 +76,7 @@ interface MatchedItem extends QuickOpenItem {
 
 export function useQuickOpen() {
   const connectionStore = useConnectionStore();
+  const savedSqlStore = useSavedSqlStore();
   const searchQuery = ref("");
   const selectedIndex = ref(0);
   const remoteItems = ref<QuickOpenItem[]>([]);
@@ -110,6 +112,24 @@ export function useQuickOpen() {
 
       // Process tree nodes to extract databases and tables
       processDatabaseTreeNodes(connectionTreeNodes, conn, items);
+    }
+
+    // Add saved SQL files from the SQL Library
+    for (const file of savedSqlStore.allFiles) {
+      const conn = file.connectionId ? connectionStore.getConfig(file.connectionId) : undefined;
+      const connName = conn?.name || "";
+      const folderPath = getSavedSqlFolderPath(file.folderId);
+      const objectPath = [file.database, file.schema].filter(Boolean).join(".");
+      items.push({
+        id: file.id,
+        type: "sql",
+        label: file.name,
+        description: [connName, folderPath, objectPath].filter(Boolean).join(" / "),
+        connectionId: file.connectionId || "",
+        database: file.database,
+        schema: file.schema,
+        searchText: [file.name, connName, folderPath, file.database, file.schema].filter(Boolean).join(" ").toLowerCase(),
+      });
     }
 
     return items;
@@ -302,6 +322,20 @@ export function useQuickOpen() {
     return undefined;
   }
 
+  function getSavedSqlFolderPath(folderId?: string): string {
+    if (!folderId) return "";
+    const byId = new Map(savedSqlStore.allFolders.map((folder) => [folder.id, folder]));
+    const parts: string[] = [];
+    const seen = new Set<string>();
+    let current = byId.get(folderId);
+    while (current && !seen.has(current.id)) {
+      seen.add(current.id);
+      parts.unshift(current.name);
+      current = current.parentFolderId ? byId.get(current.parentFolderId) : undefined;
+    }
+    return parts.join(" / ");
+  }
+
   function quickOpenItemKey(item: QuickOpenItem): string {
     if (item.type === "table" || item.type === "view" || item.type === "materialized_view") {
       return `${item.connectionId}:${item.database ?? ""}:${item.schema ?? ""}:${item.tableName ?? item.objectName ?? item.label}`.toLowerCase();
@@ -469,6 +503,7 @@ export function useQuickOpen() {
         sequence: 8,
         package: 9,
         "package-body": 10,
+        sql: 11,
       };
       return typeOrder[a.type] - typeOrder[b.type];
     });

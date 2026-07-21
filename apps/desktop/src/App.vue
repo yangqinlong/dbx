@@ -1576,15 +1576,20 @@ async function handleQuickOpenSelect(item: any) {
   const connectionStore = useConnectionStore();
   const queryStore = useQueryStore();
 
-  // For all types, set the active connection
-  connectionStore.activeConnectionId = item.connectionId;
+  // For all types, set the active connection (if any)
+  if (item.connectionId) {
+    connectionStore.activeConnectionId = item.connectionId;
 
-  // Ensure connection is connected
-  try {
-    await connectionStore.ensureConnected(item.connectionId);
-  } catch (error) {
-    console.error("Failed to connect:", error);
-    return;
+    // Ensure connection is connected
+    try {
+      await connectionStore.ensureConnected(item.connectionId);
+    } catch (error) {
+      // Saved SQL files can still be opened even if the associated connection can't be reached.
+      if (item.type !== "sql") {
+        console.error("Failed to connect:", error);
+        return;
+      }
+    }
   }
 
   // Navigate based on type
@@ -1701,6 +1706,15 @@ async function handleQuickOpenSelect(item: any) {
       queryStore.markTabClean(queryStore.tabs.find((tab) => tab.id === tabId));
     } catch (error) {
       toast((error as any)?.message || String(error), 5000);
+    }
+  } else if (item.type === "sql") {
+    // Open the saved SQL file from the SQL Library
+    const savedSqlStore = useSavedSqlStore();
+    const file = savedSqlStore.getFile(item.id);
+    if (file) {
+      await savedSqlStore.ensureFileContent(file.id);
+      const refreshed = savedSqlStore.getFile(item.id);
+      queryStore.openSavedSql(refreshed ?? file);
     }
   }
 }

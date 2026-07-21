@@ -107,6 +107,8 @@ function getTypeLabel(type: string): string {
       return t("common.package");
     case "package-body":
       return t("common.packageBody");
+    case "sql":
+      return t("tabs.sql");
     default:
       return type;
   }
