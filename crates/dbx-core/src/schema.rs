@@ -2023,6 +2023,11 @@ async fn list_tables_once(
     let pool = connections.get(&pool_key).ok_or("Pool not found")?;
 
     match pool {
+        PoolKind::Mysql(p, _) if db_config.as_ref().is_some_and(is_starrocks_config) => {
+            db::mysql::list_starrocks_tables(p, database)
+                .await
+                .map(|tables| filter_table_infos(tables, filter, limit, offset, object_types))
+        }
         PoolKind::Mysql(p, _) if db_config.as_ref().is_some_and(is_doris_family_config) => {
             db::mysql::list_tables_show(p, database)
                 .await
@@ -2782,6 +2787,39 @@ mod tests {
     }
 
     #[test]
+    fn filter_table_infos_pages_starrocks_materialized_views_independently() {
+        let tables = vec![
+            test_table_info("orders"),
+            super::db::TableInfo {
+                name: "orders_view".to_string(),
+                table_type: "VIEW".to_string(),
+                comment: None,
+                parent_schema: None,
+                parent_name: None,
+            },
+            super::db::TableInfo {
+                name: "daily_orders_mv".to_string(),
+                table_type: "MATERIALIZED_VIEW".to_string(),
+                comment: None,
+                parent_schema: None,
+                parent_name: None,
+            },
+            super::db::TableInfo {
+                name: "monthly_orders_mv".to_string(),
+                table_type: "MATERIALIZED_VIEW".to_string(),
+                comment: None,
+                parent_schema: None,
+                parent_name: None,
+            },
+        ];
+        let object_types = vec!["MATERIALIZED_VIEW".to_string()];
+
+        let filtered = filter_table_infos(tables, Some("orders"), Some(1), Some(1), Some(&object_types));
+
+        assert_eq!(filtered.into_iter().map(|table| table.name).collect::<Vec<_>>(), vec!["monthly_orders_mv"]);
+    }
+
+    #[test]
     fn filter_object_infos_filters_object_type_before_offset_and_limit() {
         let objects = vec![
             test_object_info("sync_user", "PROCEDURE"),
@@ -2795,6 +2833,21 @@ mod tests {
 
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].name, "fetch_name");
+    }
+
+    #[test]
+    fn filter_object_infos_pages_starrocks_materialized_views_independently() {
+        let objects = vec![
+            test_object_info("orders", "TABLE"),
+            test_object_info("orders_view", "VIEW"),
+            test_object_info("daily_orders_mv", "MATERIALIZED_VIEW"),
+            test_object_info("monthly_orders_mv", "MATERIALIZED_VIEW"),
+        ];
+        let object_types = vec!["MATERIALIZED_VIEW".to_string()];
+
+        let filtered = filter_object_infos(objects, Some("orders"), Some(1), Some(1), Some(&object_types));
+
+        assert_eq!(filtered.into_iter().map(|object| object.name).collect::<Vec<_>>(), vec!["monthly_orders_mv"]);
     }
 
     #[test]
@@ -4038,6 +4091,8 @@ async fn list_objects_once(
                 db::ob_oracle::list_objects(p, schema).await.map(unpaged_object_list)
             } else if db_config.as_ref().is_some_and(is_manticoresearch_config) {
                 db::manticoresearch::list_objects(p, database).await.map(unpaged_object_list)
+            } else if db_config.as_ref().is_some_and(is_starrocks_config) {
+                db::mysql::list_starrocks_table_objects(p, database).await.map(unpaged_object_list)
             } else if db_config.as_ref().is_some_and(is_doris_family_config) {
                 db::mysql::list_table_objects_show(p, database).await.map(unpaged_object_list)
             } else {
@@ -4983,6 +5038,10 @@ fn agent_paging_likely_applied(enabled: bool, limit: Option<usize>, returned_len
 fn is_doris_family_config(config: &ConnectionConfig) -> bool {
     matches!(config.db_type, DatabaseType::Doris | DatabaseType::StarRocks | DatabaseType::ManticoreSearch)
         || matches!(config.driver_profile.as_deref(), Some("doris" | "selectdb" | "starrocks" | "manticoresearch"))
+}
+
+fn is_starrocks_config(config: &ConnectionConfig) -> bool {
+    config.db_type == DatabaseType::StarRocks || matches!(config.driver_profile.as_deref(), Some("starrocks"))
 }
 
 /// Doris-family engines that support multi-catalog federation (`SHOW CATALOGS`).
