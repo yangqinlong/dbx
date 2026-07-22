@@ -13,6 +13,11 @@ const REMOTE_SEARCH_CONCURRENCY = 2;
 const REMOTE_SEARCH_RESULTS_PER_REQUEST = 25;
 const REMOTE_SEARCH_MAX_RESULTS = 100;
 const QUICK_OPEN_MAX_RESULTS = 200;
+// How many opened-folder SQL files to show in the initial (empty query) list.
+// The full set is only materialized once the user starts typing a search, so
+// opening Quick Open stays fast and light even with thousands of files, while
+// nothing is hidden or unreachable when searching.
+const QUICK_OPEN_SQL_FILES_PREVIEW = 200;
 
 const REMOTE_SEARCH_UNSUPPORTED_TYPES = new Set<ConnectionConfig["db_type"]>(["redis", "mongodb", "elasticsearch", "qdrant", "milvus", "weaviate", "chromadb", "neo4j", "influxdb", "etcd", "zookeeper", "mq", "nacos"]);
 
@@ -89,7 +94,10 @@ export function useQuickOpen() {
   let activeRemoteRequests = 0;
   const remoteRequestWaiters: Array<() => void> = [];
 
-  const allItems = computed((): QuickOpenItem[] => {
+  // Base items: connections, database/tree objects, and SQL Library files.
+  // Opened-folder SQL files are intentionally excluded here so the full set is
+  // only materialized on demand (see getFullSqlFileItems) to keep entry light.
+  const baseItems = computed((): QuickOpenItem[] => {
     const items: QuickOpenItem[] = [];
     const connections = connectionStore.connections;
     const treeNodes = connectionStore.treeNodes;
@@ -118,28 +126,6 @@ export function useQuickOpen() {
       processDatabaseTreeNodes(connectionTreeNodes, conn, items);
     }
 
-    // Add files from the "SQL Files" file explorer (opened folders)
-    const pushSqlFileItems = (entries: SqlFileEntry[], rootName: string, prefix: string) => {
-      for (const entry of entries) {
-        const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
-        if (entry.is_dir) {
-          pushSqlFileItems(entry.children, rootName, rel);
-        } else {
-          items.push({
-            id: entry.path,
-            type: "sql",
-            label: entry.name,
-            description: `${rootName} / ${rel}`,
-            connectionId: "",
-            searchText: `${entry.name} ${entry.path}`.toLowerCase(),
-          });
-        }
-      }
-    };
-    for (const folder of sqlFileStore.folders) {
-      pushSqlFileItems(folder.entries, folderNameFromPath(folder.path), "");
-    }
-
     // Add saved SQL files from the SQL Library
     for (const file of savedSqlStore.allFiles) {
       const conn = file.connectionId ? connectionStore.getConfig(file.connectionId) : undefined;
@@ -161,6 +147,60 @@ export function useQuickOpen() {
 
     return items;
   });
+
+  // Materialize opened-folder SQL file items. Building an item per file can be
+  // very expensive when folders contain thousands of files, so the full set is
+  // built lazily (via getFullSqlFileItems) only once the user starts searching.
+  function buildSqlFileItems(limit = Infinity): QuickOpenItem[] {
+    const items: QuickOpenItem[] = [];
+    let sqlFileCount = 0;
+    const pushSqlFileItems = (entries: SqlFileEntry[], rootName: string, prefix: string) => {
+      for (const entry of entries) {
+        if (sqlFileCount >= limit) return;
+        const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+        if (entry.is_dir) {
+          pushSqlFileItems(entry.children, rootName, rel);
+        } else {
+          sqlFileCount++;
+          items.push({
+            id: entry.path,
+            type: "sql",
+            label: entry.name,
+            description: `${rootName} / ${rel}`,
+            connectionId: "",
+            searchText: `${entry.name} ${entry.path}`.toLowerCase(),
+          });
+        }
+      }
+    };
+    for (const folder of sqlFileStore.folders) {
+      if (sqlFileCount >= limit) break;
+      pushSqlFileItems(folder.entries, folderNameFromPath(folder.path), "");
+    }
+    return items;
+  }
+
+  // A small preview of opened-folder SQL files for the initial empty-query view.
+  const sqlPreviewItems = computed(() => buildSqlFileItems(QUICK_OPEN_SQL_FILES_PREVIEW));
+
+  // Cached full set of opened-folder SQL files, built on first search and kept
+  // until the folder contents change (so it isn't rebuilt on every keystroke).
+  const fullSqlFileCache = ref<QuickOpenItem[] | null>(null);
+  const fullSqlFileVersion = ref(0);
+  watch(
+    () => sqlFileStore.folders,
+    () => {
+      fullSqlFileCache.value = null;
+      fullSqlFileVersion.value++;
+    },
+    { deep: true },
+  );
+  function getFullSqlFileItems(): QuickOpenItem[] {
+    if (!fullSqlFileCache.value) {
+      fullSqlFileCache.value = buildSqlFileItems();
+    }
+    return fullSqlFileCache.value;
+  }
 
   function processDatabaseTreeNodes(nodes: any[], conn: ConnectionConfig, items: QuickOpenItem[]): void {
     for (const node of nodes) {
@@ -493,28 +533,41 @@ export function useQuickOpen() {
   );
 
   const filteredItems = computed((): MatchedItem[] => {
-    if (!searchQuery.value.trim()) {
-      return allItems.value.map((item) => ({
+    const query = searchQuery.value.trim();
+    if (!query) {
+      // Initial view: base items plus a small preview of opened-folder SQL files,
+      // so opening Quick Open stays fast even with thousands of files.
+      const display = baseItems.value.concat(sqlPreviewItems.value);
+      return display.slice(0, QUICK_OPEN_MAX_RESULTS).map((item) => ({
         ...item,
         matchScore: Infinity,
         matchIndices: [],
       }));
     }
 
+    // Searching: use the complete item set including ALL opened-folder SQL files
+    // so nothing is hidden or unreachable. Track folder changes via version.
+    fullSqlFileVersion.value;
+    const fullSqlFiles = getFullSqlFileItems();
+
     const matched: MatchedItem[] = [];
 
     const seen = new Set<string>();
-    for (const item of [...allItems.value, ...remoteItems.value]) {
-      const key = quickOpenItemKey(item);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const result = fuzzyMatch(searchQuery.value, item.searchText);
-      if (result) {
-        matched.push({
-          ...item,
-          matchScore: result.score,
-          matchIndices: result.indices,
-        });
+    // Iterate the base, full SQL-file, and remote lists without spreading them
+    // into a new array on every keystroke.
+    for (const list of [baseItems.value, fullSqlFiles, remoteItems.value]) {
+      for (const item of list) {
+        const key = quickOpenItemKey(item);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const result = fuzzyMatch(query, item.searchText);
+        if (result) {
+          matched.push({
+            ...item,
+            matchScore: result.score,
+            matchIndices: result.indices,
+          });
+        }
       }
     }
 
