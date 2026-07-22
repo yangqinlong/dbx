@@ -1304,13 +1304,15 @@ export default withEnglishFallback({
     back: "返回",
   },
   quickOpen: {
-    placeholder: "搜索连接、数据库、表和其他对象...",
+    placeholder: "搜索连接、数据库、表、SQL文件和其他对象...",
     emptyPlaceholder: "开始输入进行搜索",
     noResults: "未找到结果",
     results: "个结果",
     navigate: "导航",
     select: "选择",
     close: "关闭",
+    sqlFile: "SQL文件",
+    sqlLibraryFile: "SQL库",
   },
   explain: {
     title: "执行计划",

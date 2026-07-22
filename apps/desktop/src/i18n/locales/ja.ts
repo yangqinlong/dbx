@@ -1245,13 +1245,15 @@ export default withEnglishFallback({
     back: "戻る",
   },
   quickOpen: {
-    placeholder: "接続、データベース、テーブル、その他のオブジェクトを検索...",
+    placeholder: "接続、データベース、テーブル、SQLファイル、その他のオブジェクトを検索...",
     emptyPlaceholder: "入力して検索を開始",
     noResults: "結果が見つかりません",
     results: "件の結果",
     navigate: "ナビゲート",
     select: "選択",
     close: "閉じる",
+    sqlFile: "SQLファイル",
+    sqlLibraryFile: "SQLライブラリ",
   },
   explain: {
     title: "実行計画",

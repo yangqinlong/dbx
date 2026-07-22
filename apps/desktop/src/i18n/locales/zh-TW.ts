@@ -1246,13 +1246,15 @@ export default withEnglishFallback({
     back: "返回",
   },
   quickOpen: {
-    placeholder: "搜尋連線、資料庫、資料表和其他物件……",
+    placeholder: "搜尋連線、資料庫、資料表、SQL檔案和其他物件……",
     emptyPlaceholder: "開始輸入進行搜尋",
     noResults: "找不到結果",
     results: "個結果",
     navigate: "導航",
     select: "選擇",
     close: "關閉",
+    sqlFile: "SQL檔案",
+    sqlLibraryFile: "SQL庫",
   },
   explain: {
     title: "執行計畫",

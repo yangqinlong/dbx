@@ -1608,7 +1608,30 @@ async function handleQuickOpenSelect(item: any) {
   const connectionStore = useConnectionStore();
   const queryStore = useQueryStore();
 
-  // For all types, set the active connection
+  // Handle SQL file types first — they don't require a database connection
+  if (item.type === "sql_file" && item.filePath) {
+    try {
+      const content = await api.readExternalSqlFile(item.filePath);
+      const connectionId = connectionStore.activeConnectionId || connectionStore.connections[0]?.id || "";
+      const connection = connectionId ? connectionStore.getConfig(connectionId) : undefined;
+      const database = connection ? resolveDefaultDatabase(connection, []) : "";
+      queryStore.openExternalSqlFile(connectionId, database, item.filePath, content);
+    } catch (e: any) {
+      toast(e?.message || String(e), 5000);
+    }
+    return;
+  }
+
+  if (item.type === "sql_library_file" && item.sqlFileId) {
+    const file = await savedSqlStore.ensureFileContent(item.sqlFileId);
+    if (!file) return;
+    queryStore.openSavedSql(file);
+    connectionStore.activeConnectionId = file.connectionId;
+    void savedSqlStore.recordFileUsage(file.id);
+    return;
+  }
+
+  // For all other types, set the active connection
   connectionStore.activeConnectionId = item.connectionId;
 
   // Ensure connection is connected

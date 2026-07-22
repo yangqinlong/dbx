@@ -1246,13 +1246,15 @@ export default withEnglishFallback({
     back: "Volver",
   },
   quickOpen: {
-    placeholder: "Buscar conexiones, bases de datos, tablas y otros objetos...",
+    placeholder: "Buscar conexiones, bases de datos, tablas, archivos SQL y otros objetos...",
     emptyPlaceholder: "Comienza a escribir para buscar",
     noResults: "No se encontraron resultados",
     results: "resultados",
     navigate: "Navegar",
     select: "Seleccionar",
     close: "Cerrar",
+    sqlFile: "Archivo SQL",
+    sqlLibraryFile: "Biblioteca SQL",
   },
   explain: {
     title: "Plan de ejecución",

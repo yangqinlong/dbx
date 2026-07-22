@@ -1244,13 +1244,15 @@ export default withEnglishFallback({
     back: "Indietro",
   },
   quickOpen: {
-    placeholder: "Cerca connessioni, database, tabelle e altri oggetti...",
+    placeholder: "Cerca connessioni, database, tabelle, file SQL e altri oggetti...",
     emptyPlaceholder: "Inizia a digitare per cercare",
     noResults: "Nessun risultato trovato",
     results: "risultati",
     navigate: "Naviga",
     select: "Seleziona",
     close: "Chiudi",
+    sqlFile: "File SQL",
+    sqlLibraryFile: "Libreria SQL",
   },
   explain: {
     title: "Piano di Spiegazione",
