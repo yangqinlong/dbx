@@ -3418,6 +3418,8 @@ export default withEnglishFallback({
     securityTab: "Segurança",
     aboutTab: "Sobre",
     fontFamily: "Família da fonte",
+    dataGridFontFamily: "Fonte da grade de resultados",
+    dataGridFontFamilyDescription: "Aplica-se aos resultados de consultas, dados de tabelas, cabeçalhos de colunas e editores dentro das células.",
     uiFontFamily: "Fonte da interface",
     uiFontAppDefault: "Padrão do DBX",
     uiFontSystemDefault: "Padrão do sistema",

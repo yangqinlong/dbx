@@ -3416,6 +3416,8 @@ export default withEnglishFallback({
     securityTab: "Sicurezza",
     aboutTab: "Informazioni",
     fontFamily: "Famiglia Carattere (Font)",
+    dataGridFontFamily: "Font della griglia risultati",
+    dataGridFontFamilyDescription: "Si applica ai risultati delle query, ai dati delle tabelle, alle intestazioni delle colonne e agli editor nelle celle.",
     uiFontFamily: "Carattere interfaccia",
     uiFontAppDefault: "Predefinito DBX",
     uiFontSystemDefault: "Predefinito di sistema",

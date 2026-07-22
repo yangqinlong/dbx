@@ -3417,6 +3417,8 @@ export default withEnglishFallback({
     securityTab: "セキュリティ",
     aboutTab: "バージョン情報",
     fontFamily: "フォントファミリー",
+    dataGridFontFamily: "結果グリッドのフォント",
+    dataGridFontFamilyDescription: "クエリ結果、テーブルデータ、列ヘッダー、セル内エディターに適用します。",
     uiFontFamily: "インターフェイスフォント",
     uiFontAppDefault: "DBX デフォルト",
     uiFontSystemDefault: "システムデフォルト",

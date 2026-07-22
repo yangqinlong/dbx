@@ -3640,6 +3640,8 @@ export default {
     securityTab: "Security",
     aboutTab: "About",
     fontFamily: "Font Family",
+    dataGridFontFamily: "Result Grid Font",
+    dataGridFontFamilyDescription: "Applies to query results, table data, column headers, and inline cell editors.",
     uiFontFamily: "Interface Font",
     uiFontAppDefault: "DBX Default",
     uiFontSystemDefault: "System Default",

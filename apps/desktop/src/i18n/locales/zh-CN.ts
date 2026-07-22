@@ -3630,6 +3630,8 @@ export default withEnglishFallback({
     securityTab: "安全",
     aboutTab: "关于我们",
     fontFamily: "字体",
+    dataGridFontFamily: "查询结果网格字体",
+    dataGridFontFamilyDescription: "用于查询结果、表数据、列标题和单元格内编辑器。",
     uiFontFamily: "界面字体",
     uiFontAppDefault: "DBX 默认",
     uiFontSystemDefault: "系统默认",

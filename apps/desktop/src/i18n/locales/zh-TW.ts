@@ -3234,6 +3234,8 @@ export default withEnglishFallback({
     tunnelsSocksConnectRejected: "SOCKS 代理連線被拒（代碼 {code}）",
     tunnelsSocksUnsupportedAddrType: "不支援的 SOCKS 綁定位址類型：{type}",
     fontFamily: "字型",
+    dataGridFontFamily: "查詢結果網格字型",
+    dataGridFontFamilyDescription: "套用於查詢結果、資料表資料、欄位標題及儲存格內編輯器。",
     uiFontFamily: "介面字型",
     uiFontAppDefault: "DBX 預設",
     uiFontSystemDefault: "系統預設",
