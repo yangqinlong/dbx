@@ -2,9 +2,19 @@ import { nextTick } from "vue";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useQuickOpen } from "@/composables/useQuickOpen";
 import { useConnectionStore } from "@/stores/connectionStore";
+import { useSqlFileStore } from "@/stores/sqlFileStore";
+import { useSavedSqlStore } from "@/stores/savedSqlStore";
 
 vi.mock("@/stores/connectionStore", () => ({
   useConnectionStore: vi.fn(),
+}));
+
+vi.mock("@/stores/sqlFileStore", () => ({
+  useSqlFileStore: vi.fn(() => ({ folders: [] }) as any),
+}));
+
+vi.mock("@/stores/savedSqlStore", () => ({
+  useSavedSqlStore: vi.fn(() => ({ allFiles: [], allFolders: [] }) as any),
 }));
 
 function deferred<T>() {

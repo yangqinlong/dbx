@@ -51,7 +51,7 @@ async function pickFolder() {
     const selected = await open({ directory: true, multiple: false });
     if (!selected) return;
     const folderPath = selected as string;
-    if (folders.value.some((f) => f.path === folderPath)) {
+    if (folders.some((f) => f.path === folderPath)) {
       toast(t("sqlFileTree.folderAlreadyOpen"), 2000);
       return;
     }
@@ -171,7 +171,7 @@ const contextMenuItems = computed<ContextMenuItem[]>(() => {
 
   if (target.kind === "panel") {
     const items: ContextMenuItem[] = [{ label: t("sqlFileTree.openFolder"), action: pickFolder, icon: FolderOpen }];
-    if (folders.value.length > 0) {
+    if (folders.length > 0) {
       items.push({ label: "", separator: true });
       items.push({ label: t("sqlFileTree.refreshAll"), action: sqlFileStore.refreshAll, icon: RefreshCw });
     }
@@ -179,8 +179,8 @@ const contextMenuItems = computed<ContextMenuItem[]>(() => {
   }
 
   if (target.kind === "folderHeader") {
-    const folderIdx = folders.value.findIndex((f) => f.path === target.folderPath);
-    const folder = folderIdx !== -1 ? folders.value[folderIdx] : undefined;
+    const folderIdx = folders.findIndex((f) => f.path === target.folderPath);
+    const folder = folderIdx !== -1 ? folders[folderIdx] : undefined;
     return [
       { label: t("sqlFileTree.revealInFileManager"), action: () => revealInFileManager(target.folderPath), icon: FolderSearch },
       { label: t("sqlFileTree.copyPath"), action: () => copyPath(target.folderPath), icon: Copy },
@@ -215,7 +215,7 @@ const contextMenuItems = computed<ContextMenuItem[]>(() => {
 });
 
 function expandSubtree(target: Extract<ContextTarget, { kind: "dir" }>) {
-  const folder = folders.value.find((f) => f.path === target.folderPath);
+  const folder = folders.find((f) => f.path === target.folderPath);
   if (!folder) return;
   const next = new Set(folder.expanded);
   next.add(target.entry.path);
@@ -224,7 +224,7 @@ function expandSubtree(target: Extract<ContextTarget, { kind: "dir" }>) {
 }
 
 function collapseSubtree(target: Extract<ContextTarget, { kind: "dir" }>) {
-  const folder = folders.value.find((f) => f.path === target.folderPath);
+  const folder = folders.find((f) => f.path === target.folderPath);
   if (!folder) return;
   const subtree = new Set<string>();
   collectDirPaths(target.entry.children, subtree);
