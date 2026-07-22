@@ -2272,8 +2272,11 @@ export async function deleteHistoryEntry(id: string): Promise<void> {
 // Updates
 // ---------------------------------------------------------------------------
 
-export async function checkForUpdates(locale?: string): Promise<UpdateInfo> {
-  const query = locale ? `?locale=${encodeURIComponent(locale)}` : "";
+export async function checkForUpdates(locale?: string, source?: UpdateDownloadSource): Promise<UpdateInfo> {
+  const params = new URLSearchParams();
+  if (locale) params.set("locale", locale);
+  if (source) params.set("source", source);
+  const query = params.size > 0 ? `?${params.toString()}` : "";
   return get(`/api/update/check${query}`);
 }
 
