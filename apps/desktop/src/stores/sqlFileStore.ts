@@ -6,6 +6,9 @@ import { isTauriRuntime } from "@/lib/backend/tauriRuntime";
 import { safeLocalStorageGet, safeLocalStorageSet } from "@/lib/backend/safeStorage";
 import * as api from "@/lib/backend/api";
 import type { SqlFileEntry } from "@/lib/backend/api";
+import { useConnectionStore } from "@/stores/connectionStore";
+import { useQueryStore } from "@/stores/queryStore";
+import { resolveDefaultDatabase } from "@/lib/database/defaultDatabase";
 
 const STORAGE_KEY = "dbx-sql-file-folders";
 
@@ -101,6 +104,23 @@ export const useSqlFileStore = defineStore("sqlFile", () => {
     toast(t("sqlFileTree.refreshed"), 1500);
   }
 
+  // Open a SQL file from the SQL Files file explorer (opened folders) in a query
+  // tab bound to the currently active connection. Mirrors SqlFilePanel.openFile.
+  async function openFile(path: string) {
+    if (!isTauriRuntime()) return;
+    try {
+      const content = await api.readExternalSqlFile(path);
+      const connectionStore = useConnectionStore();
+      const conn = connectionStore.connections.find((c) => c.id === connectionStore.activeConnectionId);
+      const connectionId = conn?.id || "";
+      const database = conn ? resolveDefaultDatabase(conn, []) : "";
+      const queryStore = useQueryStore();
+      queryStore.openExternalSqlFile(connectionId, database, path, content);
+    } catch (err) {
+      toast(`无法读取文件: ${err}`, 5000);
+    }
+  }
+
   async function removeFolder(index: number) {
     folders.value.splice(index, 1);
     saveFolders();
@@ -138,6 +158,7 @@ export const useSqlFileStore = defineStore("sqlFile", () => {
     loadFolderEntries,
     refreshFolder,
     refreshAll,
+    openFile,
     removeFolder,
     initFromStorage,
     allFileEntries,
