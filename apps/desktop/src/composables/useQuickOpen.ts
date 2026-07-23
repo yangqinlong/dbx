@@ -114,6 +114,7 @@ export function useQuickOpen() {
   const remoteRequestWaiters: Array<() => void> = [];
   let sqlFilesLoaded = false;
   let sqlFilesLoadingPromise: Promise<void> | null = null;
+  let sqlFilesLoadGeneration = 0;
 
   function getConnectionLabel(connectionId: string): string {
     const conn = connectionStore.connections.find((c) => c.id === connectionId);
@@ -151,11 +152,12 @@ export function useQuickOpen() {
 
   async function loadExternalSqlFiles(): Promise<void> {
     if (sqlFilesLoaded || sqlFilesLoadingPromise) return sqlFilesLoadingPromise ?? undefined;
-    sqlFilesLoadingPromise = (async () => {
+    const generation = sqlFilesLoadGeneration;
+    const loadingPromise = (async () => {
       try {
         const folderPaths = loadSavedSqlFileFolderPaths();
         if (folderPaths.length === 0) {
-          sqlFilesLoaded = true;
+          if (generation === sqlFilesLoadGeneration) sqlFilesLoaded = true;
           return;
         }
         const allEntries: Array<{ entry: SqlFileEntry; rootFolder: string }> = [];
@@ -172,6 +174,8 @@ export function useQuickOpen() {
             // Skip folders that fail to load
           }
         }
+        // Folder changes invalidate this snapshot; an updated scan runs after cleanup below.
+        if (generation !== sqlFilesLoadGeneration) return;
         sqlFileItems.value = allEntries.map(({ entry, rootFolder }) => {
           const parentDir = entry.path.replace(/\\/g, "/").split("/").slice(0, -1).join("/");
           const parentName = folderNameFromPath(parentDir || entry.path);
@@ -190,11 +194,15 @@ export function useQuickOpen() {
         sqlFilesLoaded = true;
       } catch {
         // ignore errors
-      } finally {
-        sqlFilesLoadingPromise = null;
       }
     })();
-    return sqlFilesLoadingPromise;
+    sqlFilesLoadingPromise = loadingPromise;
+    try {
+      await loadingPromise;
+    } finally {
+      if (sqlFilesLoadingPromise === loadingPromise) sqlFilesLoadingPromise = null;
+    }
+    if (generation !== sqlFilesLoadGeneration) await loadExternalSqlFiles();
   }
 
   /**
@@ -532,6 +540,7 @@ export function useQuickOpen() {
    * `sqlFileFoldersVersion` is bumped by SqlFilePanel on add/remove/refresh.
    */
   watch(sqlFileFoldersVersion, () => {
+    sqlFilesLoadGeneration++;
     sqlFilesLoaded = false;
     sqlFileItems.value = [];
     void loadExternalSqlFiles();

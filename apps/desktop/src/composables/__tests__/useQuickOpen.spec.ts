@@ -1,6 +1,8 @@
 import { nextTick } from "vue";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useQuickOpen } from "@/composables/useQuickOpen";
+import * as api from "@/lib/backend/api";
+import { getSqlFileFolderPaths, sqlFileFoldersVersion } from "@/lib/sqlFile/sqlFileFolders";
 import { useConnectionStore } from "@/stores/connectionStore";
 import { useSavedSqlStore } from "@/stores/savedSqlStore";
 
@@ -16,6 +18,14 @@ vi.mock("@/lib/backend/api", () => ({
   listSqlFilesInFolder: vi.fn(),
   readExternalSqlFile: vi.fn(),
 }));
+
+vi.mock("@/lib/sqlFile/sqlFileFolders", async () => {
+  const { ref } = await import("vue");
+  return {
+    getSqlFileFolderPaths: vi.fn(),
+    sqlFileFoldersVersion: ref(0),
+  };
+});
 
 function emptySavedSqlStore() {
   return {
@@ -44,6 +54,34 @@ async function flushAsyncWork(): Promise<void> {
 describe("useQuickOpen", () => {
   beforeEach(() => {
     vi.mocked(useSavedSqlStore).mockReturnValue(emptySavedSqlStore() as any);
+    vi.mocked(getSqlFileFolderPaths).mockReturnValue([]);
+  });
+
+  describe("external SQL files", () => {
+    it("reloads when folders change during an in-flight scan", async () => {
+      vi.mocked(useConnectionStore).mockReturnValue({ connections: [], treeNodes: [] } as any);
+      vi.mocked(getSqlFileFolderPaths).mockReturnValueOnce(["/old"]).mockReturnValue(["/new"]);
+      const oldScan = deferred<Awaited<ReturnType<typeof api.listSqlFilesInFolder>>>();
+      vi.mocked(api.listSqlFilesInFolder).mockImplementation((path) => {
+        if (path === "/old") return oldScan.promise;
+        return Promise.resolve([{ name: "new.sql", path: "/new/new.sql", is_dir: false, children: [] }]);
+      });
+
+      const { filteredItems, loadExternalSqlFiles, setQuery } = useQuickOpen();
+      const initialLoad = loadExternalSqlFiles();
+      expect(api.listSqlFilesInFolder).toHaveBeenCalledWith("/old");
+
+      sqlFileFoldersVersion.value++;
+      await nextTick();
+      oldScan.resolve([{ name: "old.sql", path: "/old/old.sql", is_dir: false, children: [] }]);
+      await initialLoad;
+
+      expect(api.listSqlFilesInFolder).toHaveBeenCalledTimes(2);
+      expect(api.listSqlFilesInFolder).toHaveBeenLastCalledWith("/new");
+      setQuery(".sql");
+      expect(filteredItems.value.map((item) => item.label)).toContain("new.sql");
+      expect(filteredItems.value.map((item) => item.label)).not.toContain("old.sql");
+    });
   });
 
   describe("fuzzyMatch function", () => {
